@@ -1,17 +1,24 @@
-const MEM_SIZE: usize = 0x1_0000;
+use crate::Cartridge;
+
+const RAM_SIZE: usize = 0x0800;
+const REG_SIZE: usize = 0x2020;
 
 pub struct Bus {
-    cycles: usize,
+    ram: Box<[u8; RAM_SIZE]>,
+    io_regs: Box<[u8; REG_SIZE]>,
+    cart: Cartridge,
 
-    mem: Box<[u8; MEM_SIZE]>,
+    cycles: usize,
 }
 
 impl Bus {
-    pub fn new() -> Self {
+    pub fn new(cart: Cartridge) -> Self {
         Self {
-            cycles: 7,
+            cycles: 0,
 
-            mem: Box::new([0u8; MEM_SIZE]),
+            ram: Box::new([0u8; RAM_SIZE]),
+            io_regs: Box::new([0u8; REG_SIZE]),
+            cart,
         }
     }
 
@@ -21,20 +28,24 @@ impl Bus {
 
     pub fn read(&mut self, addr: u16) -> u8 {
         self.tick();
-        self.mem[addr as usize]
+        self.inspect(addr)
     }
 
     pub fn write(&mut self, addr: u16, data: u8) {
         self.tick();
-        self.mem[addr as usize] = data;
+        match addr {
+            0x0000..=0x1fff => self.ram[addr as usize & 0x07ff] = data,
+            0x2000..=0x401f => self.io_regs[addr as usize - 0x2000] = data,
+            0x4020..=0xffff => self.cart.write(addr, data),
+        }
     }
 
     pub fn inspect(&self, addr: u16) -> u8 {
-        self.mem[addr as usize]
-    }
-
-    pub fn load(&mut self, base: usize, data: &[u8]) {
-        self.mem[base..=(base + data.len() - 1)].copy_from_slice(data);
+        match addr {
+            0x0000..=0x1fff => self.ram[addr as usize & 0x07ff],
+            0x2000..=0x401f => self.io_regs[addr as usize - 0x2000],
+            0x4020..=0xffff => self.cart.read(addr),
+        }
     }
 
     pub fn cycles(&self) -> usize {

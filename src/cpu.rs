@@ -21,20 +21,15 @@ pub struct Cpu {
 }
 
 impl Cpu {
-    pub fn new() -> Self {
-        Self {
-            a: 0,
-            x: 0,
-            y: 0,
-            pc: 0,
-            sp: 0xfd,
-            p: 0x34u8.into(),
+    pub fn reset(&mut self, bus: &mut Bus) {
+        *self = Default::default();
 
-            op: 0xea,
-            op_mode: AddrMode::IMP,
-            op_address: 0,
-            cross_page: false,
+        for _ in 0..5 {
+            bus.tick();
         }
+        self.p.i = true;
+        self.sp = self.sp.wrapping_sub(3);
+        self.pc = self.read_word(0xfffc, bus);
     }
 
     pub fn exec(&mut self, bus: &mut Bus) {
@@ -168,5 +163,23 @@ impl Cpu {
         let lb = self.pop_byte(bus) as u16;
         let hb = self.pop_byte(bus) as u16;
         (hb << 8) | lb
+    }
+}
+
+impl Default for Cpu {
+    fn default() -> Self {
+        Self {
+            a: 0,
+            x: 0,
+            y: 0,
+            pc: 0,
+            sp: 0xfd,
+            p: 0x34u8.into(),
+
+            op: 0xea,
+            op_mode: AddrMode::IMP,
+            op_address: 0,
+            cross_page: false,
+        }
     }
 }
