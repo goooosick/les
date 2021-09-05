@@ -106,6 +106,17 @@ impl Cartridge {
     }
 }
 
+impl Mirroring {
+    pub fn to_adresses(&self) -> [u16; 4] {
+        match self {
+            Mirroring::Horizontal => [0x000, 0x000, 0x800, 0x800],
+            Mirroring::Vertical => [0x000, 0x400, 0x000, 0x400],
+            Mirroring::SingleScreen => [0x000, 0x000, 0x000, 0x000],
+            Mirroring::FourScreen => [0x000, 0x400, 0x800, 0xc00],
+        }
+    }
+}
+
 #[allow(unused_variables)]
 pub trait Mapper {
     fn read_rpg(&self, rpg: &[u8], addr: u16) -> u8;

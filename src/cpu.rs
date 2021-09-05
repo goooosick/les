@@ -6,6 +6,8 @@ mod addressing;
 mod op_code;
 mod status;
 
+const RESET_VECTOR: u16 = 0xfffc;
+
 pub struct Cpu {
     a: u8,
     x: u8,
@@ -29,7 +31,7 @@ impl Cpu {
         }
         self.p.i = true;
         self.sp = self.sp.wrapping_sub(3);
-        self.pc = self.read_word(0xfffc, bus);
+        self.pc = self.read_word(RESET_VECTOR, bus);
     }
 
     pub fn exec(&mut self, bus: &mut Bus) {
