@@ -22,6 +22,24 @@ pub struct Cpu {
     cross_page: bool,
 }
 
+impl Default for Cpu {
+    fn default() -> Self {
+        Self {
+            a: 0,
+            x: 0,
+            y: 0,
+            pc: 0,
+            sp: 0xfd,
+            p: 0x34u8.into(),
+
+            op: 0xea,
+            op_mode: AddrMode::IMP,
+            op_address: 0,
+            cross_page: false,
+        }
+    }
+}
+
 impl Cpu {
     pub fn reset(&mut self, bus: &mut Bus) {
         *self = Default::default();
@@ -168,20 +186,24 @@ impl Cpu {
     }
 }
 
-impl Default for Cpu {
-    fn default() -> Self {
-        Self {
-            a: 0,
-            x: 0,
-            y: 0,
-            pc: 0,
-            sp: 0xfd,
-            p: 0x34u8.into(),
+pub struct CpuStatus {
+    pub a: u8,
+    pub x: u8,
+    pub y: u8,
+    pub pc: u16,
+    pub sp: u8,
+    pub p: Status,
+}
 
-            op: 0xea,
-            op_mode: AddrMode::IMP,
-            op_address: 0,
-            cross_page: false,
+impl Cpu {
+    pub fn status(&self) -> CpuStatus {
+        CpuStatus {
+            a: self.a,
+            x: self.x,
+            y: self.y,
+            pc: self.pc,
+            sp: self.sp,
+            p: self.p,
         }
     }
 }

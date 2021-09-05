@@ -62,6 +62,14 @@ impl Bus {
     pub fn cycles(&self) -> usize {
         self.cycles
     }
+
+    pub fn ppu(&self) -> &Ppu {
+        &self.ppu
+    }
+
+    pub fn cart(&self) -> &Cartridge {
+        &self.cart
+    }
 }
 
 impl Bus {

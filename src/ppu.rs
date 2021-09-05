@@ -10,6 +10,12 @@ const OAM_SIZE: usize = 0x100;
 const NAMETABLE_SIZE: usize = 0x1000;
 const PALETTES_SIZE: usize = 0x20;
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum WriteLatch {
+    Step0,
+    Step1,
+}
+
 pub struct Ppu {
     nametables: Box<[u8; NAMETABLE_SIZE]>,
     palettes: Box<[u8; PALETTES_SIZE]>,
@@ -197,8 +203,37 @@ impl Ppu {
     }
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-enum WriteLatch {
-    Step0,
-    Step1,
+impl Ppu {
+    pub fn render_pattern_table(&self, cart: &Cartridge, buf: &mut [u8], pal: usize) {
+        use bit_field::BitField;
+
+        let pal = 0x10 + pal * 4;
+        let pal = &PALETTES[pal..][..4];
+
+        let mut render_tile = |n, offset| {
+            let plane_addr = n * 0x10;
+            let n = n & 0xff;
+
+            for i0 in 0..8 {
+                let mut p0 = cart.read_chr((plane_addr + i0) as u16);
+                let mut p1 = cart.read_chr((plane_addr + i0 + 8) as u16);
+
+                for j0 in 0..8 {
+                    let b = (p0.get_bit(7) as usize) | ((p1.get_bit(7) as usize) << 1);
+                    let c = &pal[b];
+
+                    let index = (((n / 16 * 8 + i0) * 32 + n % 16 + offset) * 8 + j0) * 3;
+                    buf[index..][..3].copy_from_slice(c);
+
+                    p0 <<= 1;
+                    p1 <<= 1;
+                }
+            }
+        };
+
+        for i in 0..256usize {
+            render_tile(i, 0);
+            render_tile(i + 256, 16);
+        }
+    }
 }
