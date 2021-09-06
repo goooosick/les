@@ -204,25 +204,24 @@ impl Ppu {
 }
 
 impl Ppu {
-    pub fn render_pattern_table(&self, cart: &Cartridge, buf: &mut [u8], pal: usize) {
+    pub fn render_pattern_table(&self, cart: &Cartridge, buf: &mut [u8], pal_index: usize) {
         use bit_field::BitField;
 
-        let pal = 0x10 + pal * 4;
-        let pal = &PALETTES[pal..][..4];
+        let pal = &self.palettes[(pal_index * 4)..][..4];
 
         let mut render_tile = |n, offset| {
             let plane_addr = n * 0x10;
             let n = n & 0xff;
 
-            for i0 in 0..8 {
-                let mut p0 = cart.read_chr((plane_addr + i0) as u16);
-                let mut p1 = cart.read_chr((plane_addr + i0 + 8) as u16);
+            for x in 0..8 {
+                let mut p0 = cart.read_chr((plane_addr + x) as u16);
+                let mut p1 = cart.read_chr((plane_addr + x + 8) as u16);
 
-                for j0 in 0..8 {
+                for y in 0..8 {
                     let b = (p0.get_bit(7) as usize) | ((p1.get_bit(7) as usize) << 1);
-                    let c = &pal[b];
+                    let c = &PALETTES[pal[b] as usize];
 
-                    let index = (((n / 16 * 8 + i0) * 32 + n % 16 + offset) * 8 + j0) * 3;
+                    let index = (((n / 16 * 8 + x) * 32 + n % 16 + offset) * 8 + y) * 3;
                     buf[index..][..3].copy_from_slice(c);
 
                     p0 <<= 1;
@@ -234,6 +233,39 @@ impl Ppu {
         for i in 0..256usize {
             render_tile(i, 0);
             render_tile(i + 256, 16);
+        }
+    }
+
+    pub fn render_name_table(&self, cart: &Cartridge, buf: &mut [u8], nm_index: usize) {
+        use bit_field::BitField;
+
+        let chr_offset = self.ctrl.bg_pattern_table() as usize;
+
+        for i in 0..30 {
+            for j in 0..32 {
+                let n = self.nametables[i * 32 + j + nm_index * 0x400] as usize;
+                let plane_addr = n * 0x10 + chr_offset;
+
+                let attr = self.nametables[nm_index * 0x400 + 30 * 32 + (i / 4) * 8 + j / 4];
+                let pal_index = ((attr >> ((j % 2) * 4) + (i % 2) * 2) & 0b11) as usize * 4;
+                let pal = &self.palettes[pal_index..][..4];
+
+                for x in 0..8usize {
+                    let mut p0 = cart.read_chr((plane_addr + x) as u16);
+                    let mut p1 = cart.read_chr((plane_addr + x + 8) as u16);
+
+                    for y in 0..8usize {
+                        let b = (p0.get_bit(7) as usize) | ((p1.get_bit(7) as usize) << 1);
+                        let c = &PALETTES[pal[b] as usize];
+
+                        let index = ((i * 8 + x) * 32 * 8 + j * 8 + y) * 3;
+                        buf[index..][..3].copy_from_slice(c);
+
+                        p0 <<= 1;
+                        p1 <<= 1;
+                    }
+                }
+            }
         }
     }
 }

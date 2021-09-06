@@ -60,6 +60,7 @@ impl Cartridge {
         println!("MAPPER: {:02}", mapper_type);
         println!("RPG ROM: {} * 16KB = {}", rpg_banks, rpg_rom.len());
         println!("CHR ROM: {} * 8KB = {}", chr_banks, chr_rom.len());
+        println!("MIRRORING: {:?}", mirroring);
 
         Some(Self {
             expansion: Box::new([0u8; EXPANSION_ROM_SIZE]),
