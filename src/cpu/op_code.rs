@@ -83,7 +83,7 @@ impl Cpu {
     }
 
     fn stp(&mut self, _: &mut Bus) {
-        panic!("invalid op: {}", self.op);
+        panic!("invalid op: {:02x}", self.op);
     }
 
     fn nop(&mut self, bus: &mut Bus) {

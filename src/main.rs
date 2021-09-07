@@ -43,7 +43,7 @@ impl App {
         }
     }
 
-    fn cpu_control(ui: &mut egui::Ui, cpu: &Cpu, cycles: usize, speed: &mut usize) {
+    fn cpu_control(ui: &mut egui::Ui, cpu: &mut Cpu, cycles: usize, speed: &mut usize) -> bool {
         let s = cpu.status();
         ui.label(format!(
             "A: {:02X}    X: {:02X}    Y: {:02X}",
@@ -53,6 +53,8 @@ impl App {
         ui.label(format!("P: {:?}    {:02X}", s.p, s.p.to_u8()));
         ui.label(format!("CYCLES: {:}", cycles));
         ui.add(egui::Slider::new(speed, 0..=10000).text("speed"));
+
+        ui.button("RESET").clicked()
     }
 
     fn pattern_control(ui: &mut egui::Ui, tex: &Option<TextureId>, pal_index: &mut usize) {
@@ -147,9 +149,12 @@ impl epi::App for App {
             .resizable(false)
             .show(ctx, |ui| {
                 ui.vertical_centered(|ui| {
-                    ui.heading("Cpu");
+                    ui.heading("CPU");
                 });
-                Self::cpu_control(ui, cpu, bus.cycles(), speed);
+
+                if Self::cpu_control(ui, cpu, bus.cycles(), speed) {
+                    cpu.reset(bus);
+                }
             });
         egui::SidePanel::right("right")
             .resizable(false)
@@ -160,7 +165,7 @@ impl epi::App for App {
                 });
                 Self::pattern_control(ui, pattern, pal_index);
                 ui.vertical_centered(|ui| {
-                    ui.heading("Name Table");
+                    ui.heading("Nametable");
                 });
                 Self::nametable_control(ui, nametable, nm_index);
             });

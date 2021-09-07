@@ -59,6 +59,10 @@ impl Bus {
         }
     }
 
+    pub(crate) fn nmi(&mut self) -> bool {
+        self.ppu.consume_nmi()
+    }
+
     pub fn cycles(&self) -> usize {
         self.cycles
     }

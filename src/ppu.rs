@@ -33,6 +33,7 @@ pub struct Ppu {
     w: Cell<WriteLatch>,
     line: usize,
     dot: usize,
+    nmi: bool,
 
     nm_base_address: [u16; 4],
 }
@@ -56,6 +57,7 @@ impl Ppu {
             w: Cell::new(WriteLatch::Step0),
             line: 0,
             dot: 0,
+            nmi: false,
 
             nm_base_address: mirroring.to_adresses(),
         }
@@ -67,15 +69,25 @@ impl Ppu {
             self.line += 1;
             self.dot = 0;
 
-            if self.line == 240 {
-                self.status.set_vblank(true);
-            }
-
             if self.line == 262 {
                 self.line = 0;
                 self.status.set_vblank(false);
             }
         }
+
+        if self.line == 241 && self.dot == 1 {
+            self.status.set_vblank(true);
+
+            if self.ctrl.nmi_on() {
+                self.nmi = true;
+            }
+        }
+    }
+
+    pub(crate) fn consume_nmi(&mut self) -> bool {
+        let nmi = self.nmi;
+        self.nmi = false;
+        nmi
     }
 }
 
@@ -207,7 +219,7 @@ impl Ppu {
     pub fn render_pattern_table(&self, cart: &Cartridge, buf: &mut [u8], pal_index: usize) {
         use bit_field::BitField;
 
-        let pal = &self.palettes[(pal_index * 4)..][..4];
+        let pal_index = pal_index as u16 * 4;
 
         let mut render_tile = |n, offset| {
             let plane_addr = n * 0x10;
@@ -218,8 +230,9 @@ impl Ppu {
                 let mut p1 = cart.read_chr((plane_addr + x + 8) as u16);
 
                 for y in 0..8 {
-                    let b = (p0.get_bit(7) as usize) | ((p1.get_bit(7) as usize) << 1);
-                    let c = &PALETTES[pal[b] as usize];
+                    let b = (p0.get_bit(7) as u16) | ((p1.get_bit(7) as u16) << 1);
+                    let pal_addr = pal_index + b + 0x3f00;
+                    let c = &PALETTES[self.read_vram(cart, pal_addr) as usize];
 
                     let index = (((n / 16 * 8 + x) * 32 + n % 16 + offset) * 8 + y) * 3;
                     buf[index..][..3].copy_from_slice(c);
@@ -247,16 +260,16 @@ impl Ppu {
                 let plane_addr = n * 0x10 + chr_offset;
 
                 let attr = self.nametables[nm_index * 0x400 + 30 * 32 + (i / 4) * 8 + j / 4];
-                let pal_index = ((attr >> ((j % 2) * 4) + (i % 2) * 2) & 0b11) as usize * 4;
-                let pal = &self.palettes[pal_index..][..4];
+                let pal_index = ((attr >> ((j % 2) * 4) + (i % 2) * 2) & 0b11) as u16 * 4;
 
                 for x in 0..8usize {
                     let mut p0 = cart.read_chr((plane_addr + x) as u16);
                     let mut p1 = cart.read_chr((plane_addr + x + 8) as u16);
 
                     for y in 0..8usize {
-                        let b = (p0.get_bit(7) as usize) | ((p1.get_bit(7) as usize) << 1);
-                        let c = &PALETTES[pal[b] as usize];
+                        let b = (p0.get_bit(7) as u16) | ((p1.get_bit(7) as u16) << 1);
+                        let pal_addr = pal_index + b + 0x3f00;
+                        let c = &PALETTES[self.read_vram(cart, pal_addr) as usize];
 
                         let index = ((i * 8 + x) * 32 * 8 + j * 8 + y) * 3;
                         buf[index..][..3].copy_from_slice(c);
