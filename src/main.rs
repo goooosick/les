@@ -6,6 +6,7 @@ use les::{Bus, Cpu};
 
 const PATTERN_SIZE: (usize, usize) = (256, 128);
 const NAMETABLE_SIZE: (usize, usize) = (256, 240);
+const PALETTES_SIZE: (usize, usize) = (256, 32);
 
 struct App {
     bus: Bus,
@@ -17,8 +18,10 @@ struct App {
 
     pattern_data: Vec<u8>,
     nametable_data: Vec<u8>,
+    palettes_data: Vec<u8>,
     pattern: Option<TextureId>,
     nametable: Option<TextureId>,
+    palettes: Option<TextureId>,
 }
 
 impl App {
@@ -38,8 +41,10 @@ impl App {
 
             pattern_data: vec![0u8; PATTERN_SIZE.0 * PATTERN_SIZE.1 * 3],
             nametable_data: vec![0u8; NAMETABLE_SIZE.0 * NAMETABLE_SIZE.1 * 3],
+            palettes_data: vec![0u8; PALETTES_SIZE.0 * PALETTES_SIZE.1 * 3],
             pattern: None,
             nametable: None,
+            palettes: None,
         }
     }
 
@@ -51,7 +56,7 @@ impl App {
         ));
         ui.label(format!("PC: {:04X}    SP: {:02X}", s.pc, s.sp));
         ui.label(format!("P: {:?}    {:02X}", s.p, s.p.to_u8()));
-        ui.label(format!("CYCLES: {:}", cycles));
+        ui.label(format!("CYCLES: {}", cycles));
         ui.add(egui::Slider::new(speed, 0..=10000).text("speed"));
 
         ui.button("RESET").clicked()
@@ -75,6 +80,14 @@ impl App {
         }
     }
 
+    fn palettes_control(ui: &mut egui::Ui, tex: &Option<TextureId>) {
+        if let Some(texture) = tex {
+            ui.centered_and_justified(|ui| {
+                ui.image(*texture, (PALETTES_SIZE.0 as f32, PALETTES_SIZE.1 as f32));
+            });
+        }
+    }
+
     fn render_ppu(&mut self, frame: &mut epi::Frame<'_>) {
         self.bus.ppu().render_pattern_table(
             self.bus.cart(),
@@ -86,37 +99,32 @@ impl App {
             self.nametable_data.as_mut(),
             self.nm_index,
         );
+        self.bus.ppu().render_palettes(self.palettes_data.as_mut());
 
-        {
-            if let Some(tex) = self.pattern.take() {
-                frame.tex_allocator().free(tex);
-            }
-
-            let tex = frame.tex_allocator().alloc_srgba_premultiplied(
-                PATTERN_SIZE,
-                self.pattern_data
-                    .chunks_exact(3)
-                    .map(|c| Color32::from_rgb(c[0], c[1], c[2]))
-                    .collect::<Vec<_>>()
-                    .as_ref(),
-            );
-            self.pattern = Some(tex);
-        }
-
-        {
-            if let Some(tex) = self.nametable.take() {
-                frame.tex_allocator().free(tex);
-            }
-
-            let tex = frame.tex_allocator().alloc_srgba_premultiplied(
+        let data = [
+            (&mut self.pattern_data, PATTERN_SIZE, &mut self.pattern),
+            (
+                &mut self.nametable_data,
                 NAMETABLE_SIZE,
-                self.nametable_data
-                    .chunks_exact(3)
-                    .map(|c| Color32::from_rgb(c[0], c[1], c[2]))
-                    .collect::<Vec<_>>()
-                    .as_ref(),
+                &mut self.nametable,
+            ),
+            (&mut self.palettes_data, PALETTES_SIZE, &mut self.palettes),
+        ];
+
+        for (data, size, tex) in data {
+            if let Some(tex) = tex.take() {
+                frame.tex_allocator().free(tex);
+            }
+
+            *tex = Some(
+                frame.tex_allocator().alloc_srgba_premultiplied(
+                    size,
+                    data.chunks_exact(3)
+                        .map(|c| Color32::from_rgb(c[0], c[1], c[2]))
+                        .collect::<Vec<_>>()
+                        .as_ref(),
+                ),
             );
-            self.nametable = Some(tex);
         }
     }
 }
@@ -137,6 +145,7 @@ impl epi::App for App {
             nm_index,
             pattern,
             nametable,
+            palettes,
             ..
         } = self;
         for _ in 0..*speed {
@@ -164,17 +173,23 @@ impl epi::App for App {
                     ui.heading("Pattern Table");
                 });
                 Self::pattern_control(ui, pattern, pal_index);
+
                 ui.vertical_centered(|ui| {
                     ui.heading("Nametable");
                 });
                 Self::nametable_control(ui, nametable, nm_index);
+
+                ui.vertical_centered(|ui| {
+                    ui.heading("Palettes");
+                });
+                Self::palettes_control(ui, palettes);
             });
     }
 }
 
 fn main() {
     let options = eframe::NativeOptions {
-        initial_window_size: Some((900.0, 500.0).into()),
+        initial_window_size: Some((900.0, 525.0).into()),
         ..Default::default()
     };
     eframe::run_native(Box::new(App::new()), options);
