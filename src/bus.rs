@@ -27,9 +27,11 @@ impl Bus {
     }
 
     pub fn tick(&mut self) {
+        let Self { ppu, cart, .. } = self;
+
         self.cycles += 1;
         for _ in 0..3 {
-            self.ppu.tick();
+            ppu.tick(cart);
         }
     }
 
@@ -61,6 +63,10 @@ impl Bus {
 
     pub(crate) fn nmi(&mut self) -> bool {
         self.ppu.consume_nmi()
+    }
+
+    pub(crate) fn reset(&mut self) {
+        self.ppu.reset();
     }
 
     pub fn cycles(&self) -> usize {

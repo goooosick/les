@@ -2,11 +2,12 @@ use eframe::{
     egui::{self, color::Color32, TextureId},
     epi,
 };
-use les::{Bus, Cpu};
+use les::{Bus, Cpu, Ppu};
 
 const PATTERN_SIZE: (usize, usize) = (256, 128);
 const NAMETABLE_SIZE: (usize, usize) = (256, 240);
 const PALETTES_SIZE: (usize, usize) = (256, 32);
+const DISPLAY_SIZE: (usize, usize) = (256, 240);
 
 struct App {
     bus: Bus,
@@ -22,6 +23,7 @@ struct App {
     pattern: Option<TextureId>,
     nametable: Option<TextureId>,
     palettes: Option<TextureId>,
+    display: Option<TextureId>,
 }
 
 impl App {
@@ -45,10 +47,11 @@ impl App {
             pattern: None,
             nametable: None,
             palettes: None,
+            display: None,
         }
     }
 
-    fn cpu_control(ui: &mut egui::Ui, cpu: &mut Cpu, cycles: usize, speed: &mut usize) -> bool {
+    fn cpu_control(ui: &mut egui::Ui, cpu: &Cpu, cycles: usize, speed: &mut usize) -> bool {
         let s = cpu.status();
         ui.label(format!(
             "A: {:02X}    X: {:02X}    Y: {:02X}",
@@ -60,6 +63,11 @@ impl App {
         ui.add(egui::Slider::new(speed, 0..=10000).text("speed"));
 
         ui.button("RESET").clicked()
+    }
+
+    fn ppu_control(ui: &mut egui::Ui, ppu: &Ppu) {
+        let t = ppu.timing();
+        ui.label(format!("TIMING: ({}, {})", t.0, t.1));
     }
 
     fn pattern_control(ui: &mut egui::Ui, tex: &Option<TextureId>, pal_index: &mut usize) {
@@ -102,13 +110,22 @@ impl App {
         self.bus.ppu().render_palettes(self.palettes_data.as_mut());
 
         let data = [
-            (&mut self.pattern_data, PATTERN_SIZE, &mut self.pattern),
+            (self.pattern_data.as_ref(), PATTERN_SIZE, &mut self.pattern),
             (
-                &mut self.nametable_data,
+                self.nametable_data.as_ref(),
                 NAMETABLE_SIZE,
                 &mut self.nametable,
             ),
-            (&mut self.palettes_data, PALETTES_SIZE, &mut self.palettes),
+            (
+                self.palettes_data.as_ref(),
+                PALETTES_SIZE,
+                &mut self.palettes,
+            ),
+            (
+                self.bus.ppu().display_buf(),
+                DISPLAY_SIZE,
+                &mut self.display,
+            ),
         ];
 
         for (data, size, tex) in data {
@@ -146,13 +163,21 @@ impl epi::App for App {
             pattern,
             nametable,
             palettes,
+            display,
             ..
         } = self;
         for _ in 0..*speed {
             cpu.exec(bus);
         }
 
-        egui::CentralPanel::default().show(ctx, |ui| {});
+        egui::CentralPanel::default().show(ctx, |ui| {
+            ui.vertical_centered_justified(|ui| {
+                ui.heading("Display");
+                if let Some(tex) = display {
+                    ui.image(*tex, (DISPLAY_SIZE.0 as f32, DISPLAY_SIZE.1 as f32));
+                }
+            });
+        });
 
         egui::SidePanel::left("left")
             .resizable(false)
@@ -160,10 +185,14 @@ impl epi::App for App {
                 ui.vertical_centered(|ui| {
                     ui.heading("CPU");
                 });
-
                 if Self::cpu_control(ui, cpu, bus.cycles(), speed) {
                     cpu.reset(bus);
                 }
+
+                ui.vertical_centered(|ui| {
+                    ui.heading("PPU");
+                });
+                Self::ppu_control(ui, bus.ppu());
             });
         egui::SidePanel::right("right")
             .resizable(false)

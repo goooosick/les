@@ -129,21 +129,61 @@ impl PpuStatus {
     }
 }
 
+// from: https://wiki.nesdev.com/w/index.php?title=PPU_scrolling
+// fedcba98 76543210
+//  yyyNNYY YYYXXXXX
+const VX_MASK: u16 = 0b0000_0100_0001_1111;
+const VY_MASK: u16 = 0b0111_1011_1110_0000;
+
 /// PPU vram address
-///
-/// from: https://wiki.nesdev.com/w/index.php?title=PPU_scrolling
-/// fedcba98 76543210
-///  yyyNNYY YYYXXXXX
 #[derive(Debug, Default, Clone)]
 pub struct VramAddr(Cell<u16>);
 
 impl VramAddr {
+    pub fn addr(&self) -> u16 {
+        self.0.get().get_bits(0x00..0x0e)
+    }
+
+    pub fn tile_addr(&self) -> u16 {
+        let v = self.0.get();
+        0x2000 | (v & 0x0fff)
+    }
+
+    pub fn attr_addr(&self) -> u16 {
+        let v = self.0.get();
+        0x23C0 | (v & 0x0c00) | ((v >> 4) & 0x38) | ((v >> 2) & 0x07)
+    }
+
     pub fn inc(&self, offset: u16) {
         self.0.set(self.0.get() + offset);
     }
 
-    pub fn addr(&self) -> u16 {
-        self.0.get().get_bits(0x00..0x0e)
+    pub fn inc_coarse_x(&self) {
+        let cx = self.coarse_x();
+        if cx == 31 {
+            self.set_coarse_x(0);
+            self.switch_nm(0b01); // switch horizontal nametable
+        } else {
+            self.set_coarse_x(cx + 1);
+        }
+    }
+
+    pub fn inc_y(&self) {
+        let y = self.y();
+        if y < 7 {
+            self.set_y(y + 1);
+        } else {
+            self.set_y(0);
+            let cy = self.coarse_y();
+            if cy == 29 {
+                self.set_coarse_y(0);
+                self.switch_nm(0b10); // switch vertical nametable
+            } else if cy == 31 {
+                self.set_coarse_y(0);
+            } else {
+                self.set_coarse_y(cy + 1);
+            }
+        }
     }
 
     pub fn coarse_x(&self) -> u16 {
@@ -170,6 +210,10 @@ impl VramAddr {
         self.0.set(*self.0.get().set_bits(0x0a..0x0c, b));
     }
 
+    pub fn switch_nm(&self, b: u16) {
+        self.set_nm(self.nm() ^ b);
+    }
+
     pub fn y(&self) -> u16 {
         self.0.get().get_bits(0x0c..0x0f)
     }
@@ -180,5 +224,36 @@ impl VramAddr {
 
     pub fn set_bits<T: std::ops::RangeBounds<usize>>(&self, range: T, b: u16) {
         self.0.set(*self.0.get().set_bits(range, b));
+    }
+
+    pub fn copy_vx(&self, other: &VramAddr) {
+        let v0 = self.0.get();
+        let v1 = other.0.get();
+        self.0.set((v0 & !VX_MASK) | (v1 & VX_MASK));
+    }
+
+    pub fn copy_vy(&self, other: &VramAddr) {
+        let v0 = self.0.get();
+        let v1 = other.0.get();
+        self.0.set((v0 & !VY_MASK) | (v1 & VY_MASK));
+    }
+}
+
+#[derive(Debug, Default)]
+pub struct ShiftReg(u16, u16);
+
+impl ShiftReg {
+    pub fn get(&self, x: usize) -> u16 {
+        self.0.get_bit(x) as u16 | ((self.1.get_bit(x) as u16) << 1)
+    }
+
+    pub fn shift(&mut self) {
+        self.0 >>= 1;
+        self.1 >>= 1;
+    }
+
+    pub fn load(&mut self, b0: u8, b1: u8) {
+        self.0.set_bits(8..16, b0.reverse_bits() as u16);
+        self.1.set_bits(8..16, b1.reverse_bits() as u16);
     }
 }

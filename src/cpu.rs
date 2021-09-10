@@ -44,6 +44,8 @@ impl Default for Cpu {
 
 impl Cpu {
     pub fn reset(&mut self, bus: &mut Bus) {
+        bus.reset();
+
         *self = Default::default();
         self.p.b = false;
         self.serve_interrupt(RESET_VECTOR, bus);

@@ -10,11 +10,22 @@ mod regs;
 const OAM_SIZE: usize = 0x100;
 const NAMETABLE_SIZE: usize = 0x1000;
 const PALETTES_SIZE: usize = 0x20;
+const BUF_SIZE: usize = 256 * 240 * 3;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 enum WriteLatch {
     Step0,
     Step1,
+}
+
+struct RenderState {
+    nm_byte: u8,
+    attr_byte: u8,
+    tile_bits: ShiftReg,
+    attr_bits: ShiftReg,
+
+    buf: Box<[u8; BUF_SIZE]>,
+    back_buf: Box<[u8; BUF_SIZE]>,
 }
 
 pub struct Ppu {
@@ -32,9 +43,11 @@ pub struct Ppu {
     t: VramAddr,
     x: usize,
     w: Cell<WriteLatch>,
+    frames: usize,
     line: usize,
     dot: usize,
     nmi: bool,
+    rs: RenderState,
 
     nm_base_address: [u16; 4],
 }
@@ -56,25 +69,18 @@ impl Ppu {
             t: VramAddr::default(),
             x: 0,
             w: Cell::new(WriteLatch::Step0),
+            frames: 0,
             line: 0,
             dot: 0,
             nmi: false,
+            rs: Default::default(),
 
             nm_base_address: mirroring.to_adresses(),
         }
     }
 
-    pub fn tick(&mut self) {
-        self.dot += 1;
-        if self.dot == 341 {
-            self.line += 1;
-            self.dot = 0;
-
-            if self.line == 262 {
-                self.line = 0;
-                self.status.set_vblank(false);
-            }
-        }
+    pub fn tick(&mut self, cart: &Cartridge) {
+        self.update(cart);
 
         if self.line == 241 && self.dot == 1 {
             self.status.set_vblank(true);
@@ -83,12 +89,129 @@ impl Ppu {
                 self.nmi = true;
             }
         }
+
+        if self.line == 261 {
+            if self.dot == 1 {
+                self.status.set_vblank(false);
+                self.status.set_sp0_hit(false);
+
+                std::mem::swap(&mut self.rs.buf, &mut self.rs.back_buf);
+            }
+
+            if self.dot == 339 {
+                if self.mask.show_bg() && (self.frames % 2 != 0) {
+                    self.dot = 340;
+                }
+            }
+        }
+
+        self.dot += 1;
+        if self.dot == 341 {
+            self.line += 1;
+            self.dot = 0;
+
+            if self.line == 262 {
+                self.line = 0;
+                self.frames += 1;
+            }
+        }
+    }
+
+    fn update(&mut self, cart: &Cartridge) {
+        if self.mask.show_bg() {
+            self.update_bg(cart);
+        }
+    }
+
+    fn update_bg(&mut self, cart: &Cartridge) {
+        if (0..240).contains(&self.line) || self.line == 261 {
+            if (1..257).contains(&self.dot) || (321..337).contains(&self.dot) {
+                let current_x = self.dot - 1;
+
+                // render bg
+                if current_x < 256 && self.line < 240 {
+                    let bg_pal = self.rs.attr_bits.get(self.x);
+                    let bg_color = self.rs.tile_bits.get(self.x);
+                    let pal_index = self.read_vram(cart, 0x3f00 + bg_pal * 4 + bg_color);
+
+                    let index = (self.line * 256 + current_x) * 3;
+                    self.rs.buf[index..][..3].copy_from_slice(&PALETTES[pal_index as usize]);
+                }
+
+                self.rs.attr_bits.shift();
+                self.rs.tile_bits.shift();
+
+                // fetch data
+                match current_x % 8 {
+                    1 => self.rs.nm_byte = self.read_vram(cart, self.v.tile_addr()),
+                    3 => self.rs.attr_byte = self.read_vram(cart, self.v.attr_addr()),
+                    5 => {}
+                    7 => {
+                        let b = (self.rs.attr_byte
+                            >> ((self.v.coarse_x() & 0b10) + (self.v.coarse_y() & 0b10) * 2))
+                            & 0b11;
+                        self.rs
+                            .attr_bits
+                            .load((b & 0b01) * 0xff, ((b & 0b10) >> 1) * 0xff);
+
+                        let chr_addr = self.ctrl.bg_pattern_table()
+                            + self.v.y()
+                            + self.rs.nm_byte as u16 * 0x10;
+                        let (b0, b1) = (
+                            self.read_vram(cart, chr_addr),
+                            self.read_vram(cart, chr_addr + 8),
+                        );
+                        self.rs.tile_bits.load(b0, b1);
+
+                        // x increment
+                        self.v.inc_coarse_x();
+                    }
+                    _ => {}
+                }
+
+                // y increment
+                if self.dot == 256 {
+                    self.v.inc_y();
+                }
+            }
+
+            // update horizontal
+            if self.dot == 257 {
+                self.v.copy_vx(&self.t);
+            }
+        }
+
+        // update vertical
+        if self.line == 261 && (280..305).contains(&self.dot) {
+            self.v.copy_vy(&self.t);
+        }
     }
 
     pub(crate) fn consume_nmi(&mut self) -> bool {
         let nmi = self.nmi;
         self.nmi = false;
         nmi
+    }
+
+    pub(crate) fn reset(&mut self) {
+        self.dot = 0;
+        self.line = 0;
+        self.frames = 0;
+        self.rs = Default::default();
+        self.v = VramAddr::default();
+        self.t = VramAddr::default();
+        self.x = 0;
+        self.w = Cell::new(WriteLatch::Step0);
+        self.nametables.fill(0);
+        self.palettes.fill(0);
+    }
+
+    pub fn timing(&self) -> (usize, usize) {
+        (self.line, self.dot)
+    }
+
+    pub fn display_buf(&self) -> &[u8] {
+        self.rs.back_buf.as_ref()
     }
 }
 
@@ -213,6 +336,20 @@ impl Ppu {
     fn nm_addr(&self, addr: u16) -> usize {
         let n = (addr & 0xeff) >> 10;
         (self.nm_base_address[n as usize] + (addr & 0x3ff)) as usize
+    }
+}
+
+impl Default for RenderState {
+    fn default() -> Self {
+        Self {
+            nm_byte: 0,
+            attr_byte: 0,
+            tile_bits: Default::default(),
+            attr_bits: Default::default(),
+
+            buf: Box::new([0u8; BUF_SIZE]),
+            back_buf: Box::new([0u8; BUF_SIZE]),
+        }
     }
 }
 
