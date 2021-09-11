@@ -2,7 +2,7 @@ use eframe::{
     egui::{self, color::Color32, InputState, Key, TextureId},
     epi,
 };
-use les::{Bus, Cpu, Ppu};
+use les::{Bus, Cpu};
 
 const PATTERN_SIZE: (usize, usize) = (256, 128);
 const NAMETABLE_SIZE: (usize, usize) = (256, 240);
@@ -15,6 +15,8 @@ struct App {
     bus: Bus,
     cpu: Cpu,
 
+    step: bool,
+    pause: bool,
     speed: usize,
     pal_index: usize,
     nm_index: usize,
@@ -39,6 +41,8 @@ impl App {
             cpu,
             bus,
 
+            step: false,
+            pause: false,
             speed: CYCLES_PER_FRAME,
             pal_index: 0,
             nm_index: 0,
@@ -53,50 +57,83 @@ impl App {
         }
     }
 
-    fn cpu_control(ui: &mut egui::Ui, cpu: &Cpu, cycles: usize, speed: &mut usize) -> bool {
-        let s = cpu.status();
-        ui.label(format!(
-            "A: {:02X}    X: {:02X}    Y: {:02X}",
-            s.a, s.x, s.y
-        ));
-        ui.label(format!("PC: {:04X}    SP: {:02X}", s.pc, s.sp));
-        ui.label(format!("P: {:?}    {:02X}", s.p, s.p.to_u8()));
-        ui.label(format!("CYCLES: {}", cycles));
-        ui.add(egui::Slider::new(speed, 0..=(CYCLES_PER_FRAME * 2)).text("speed"));
+    fn left_panel(&mut self, ui: &mut egui::Ui) {
+        ui.vertical_centered(|ui| {
+            ui.heading("CPU");
+        });
+        {
+            let s = self.cpu.status();
+            ui.label(format!(
+                "A: {:02X}    X: {:02X}    Y: {:02X}",
+                s.a, s.x, s.y
+            ));
+            ui.label(format!("PC: {:04X}    SP: {:02X}", s.pc, s.sp));
+            ui.label(format!("P: {:?}    {:02X}", s.p, s.p.to_u8()));
+            ui.label(format!("CYCLES: {}", self.bus.cycles()));
+            ui.add(egui::Slider::new(&mut self.speed, 0..=(CYCLES_PER_FRAME * 2)).text("speed"));
+            ui.separator();
 
-        ui.button("RESET").clicked()
-    }
-
-    fn ppu_control(ui: &mut egui::Ui, ppu: &Ppu) {
-        let t = ppu.timing();
-        ui.label(format!("TIMING: ({}, {})", t.0, t.1));
-        ui.label(format!("FRAME TIME: {}", ui.input().unstable_dt * 1000.0));
-    }
-
-    fn pattern_control(ui: &mut egui::Ui, tex: &Option<TextureId>, pal_index: &mut usize) {
-        if let Some(texture) = tex {
-            ui.vertical_centered(|ui| {
-                ui.image(*texture, (PATTERN_SIZE.0 as f32, PATTERN_SIZE.1 as f32));
-                ui.add(egui::Slider::new(pal_index, 0..=7).text("palette"));
+            ui.horizontal(|ui| {
+                if ui.button("RESET").clicked() {
+                    self.cpu.reset(&mut self.bus);
+                    self.speed = CYCLES_PER_FRAME;
+                }
+                if ui.button("STEP").clicked() {
+                    self.pause = true;
+                    self.step = true;
+                }
+                if ui
+                    .button(["PAUSE", "CONTINUE"][self.pause as usize])
+                    .clicked()
+                {
+                    self.pause = !self.pause;
+                }
             });
+            ui.separator();
+        }
+
+        ui.vertical_centered(|ui| {
+            ui.heading("PPU");
+        });
+        {
+            let t = self.bus.ppu().timing();
+            ui.label(format!("TIMING: ({}, {})", t.0, t.1));
+            ui.label(format!("FRAME TIME: {}", ui.input().unstable_dt * 1000.0));
         }
     }
 
-    fn nametable_control(ui: &mut egui::Ui, tex: &Option<TextureId>, nm_index: &mut usize) {
-        if let Some(texture) = tex {
+    fn right_panel(&mut self, ui: &mut egui::Ui) {
+        ui.vertical_centered(|ui| {
+            ui.heading("Pattern Table");
+        });
+        if let Some(texture) = self.pattern {
             ui.vertical_centered(|ui| {
-                ui.image(*texture, (NAMETABLE_SIZE.0 as f32, NAMETABLE_SIZE.1 as f32));
-                ui.add(egui::Slider::new(nm_index, 0..=3).text("name table"));
+                ui.image(texture, (PATTERN_SIZE.0 as f32, PATTERN_SIZE.1 as f32));
+                ui.add(egui::Slider::new(&mut self.pal_index, 0..=7).text("palette"));
             });
         }
-    }
+        ui.separator();
 
-    fn palettes_control(ui: &mut egui::Ui, tex: &Option<TextureId>) {
-        if let Some(texture) = tex {
+        ui.vertical_centered(|ui| {
+            ui.heading("Nametable");
+        });
+        if let Some(texture) = self.nametable {
+            ui.vertical_centered(|ui| {
+                ui.image(texture, (NAMETABLE_SIZE.0 as f32, NAMETABLE_SIZE.1 as f32));
+                ui.add(egui::Slider::new(&mut self.nm_index, 0..=3).text("name table"));
+            });
+        }
+        ui.separator();
+
+        ui.vertical_centered(|ui| {
+            ui.heading("Palettes");
+        });
+        if let Some(texture) = self.palettes {
             ui.centered_and_justified(|ui| {
-                ui.image(*texture, (PALETTES_SIZE.0 as f32, PALETTES_SIZE.1 as f32));
+                ui.image(texture, (PALETTES_SIZE.0 as f32, PALETTES_SIZE.1 as f32));
             });
         }
+        ui.separator();
     }
 
     fn render_ppu(&mut self, frame: &mut epi::Frame<'_>) {
@@ -169,9 +206,16 @@ impl App {
         self.bus.set_input0(input.0);
         self.bus.set_input1(input.1);
 
-        let end = self.bus.cycles() + self.speed;
-        while self.bus.cycles() < end {
-            self.cpu.exec(&mut self.bus);
+        if !self.pause {
+            let end = self.bus.cycles() + self.speed;
+            while self.bus.cycles() < end {
+                self.cpu.exec(&mut self.bus);
+            }
+        } else {
+            if self.step {
+                self.cpu.exec(&mut self.bus);
+                self.step = false;
+            }
         }
     }
 }
@@ -185,69 +229,31 @@ impl epi::App for App {
         self.update_emu(ctx.input());
         self.render_ppu(frame);
 
-        let Self {
-            cpu,
-            bus,
-            speed,
-            pal_index,
-            nm_index,
-            pattern,
-            nametable,
-            palettes,
-            display,
-            ..
-        } = self;
-
-        egui::CentralPanel::default().show(ctx, |ui| {
-            ui.vertical_centered_justified(|ui| {
-                ui.heading("Display");
-                if let Some(tex) = display {
-                    ui.image(*tex, (DISPLAY_SIZE.0 as f32, DISPLAY_SIZE.1 as f32));
-                }
-            });
-        });
-
         egui::SidePanel::left("left")
             .resizable(false)
             .show(ctx, |ui| {
-                ui.vertical_centered(|ui| {
-                    ui.heading("CPU");
-                });
-                if Self::cpu_control(ui, cpu, bus.cycles(), speed) {
-                    cpu.reset(bus);
-                    *speed = CYCLES_PER_FRAME;
-                }
-
-                ui.vertical_centered(|ui| {
-                    ui.heading("PPU");
-                });
-                Self::ppu_control(ui, bus.ppu());
+                self.left_panel(ui);
             });
         egui::SidePanel::right("right")
             .resizable(false)
             .default_width(256.0)
             .show(ctx, |ui| {
-                ui.vertical_centered(|ui| {
-                    ui.heading("Pattern Table");
-                });
-                Self::pattern_control(ui, pattern, pal_index);
-
-                ui.vertical_centered(|ui| {
-                    ui.heading("Nametable");
-                });
-                Self::nametable_control(ui, nametable, nm_index);
-
-                ui.vertical_centered(|ui| {
-                    ui.heading("Palettes");
-                });
-                Self::palettes_control(ui, palettes);
+                self.right_panel(ui);
             });
+        egui::CentralPanel::default().show(ctx, |ui| {
+            ui.vertical_centered_justified(|ui| {
+                ui.heading("Display");
+                if let Some(tex) = self.display {
+                    ui.image(tex, (DISPLAY_SIZE.0 as f32, DISPLAY_SIZE.1 as f32));
+                }
+            });
+        });
     }
 }
 
 fn main() {
     let options = eframe::NativeOptions {
-        initial_window_size: Some((900.0, 525.0).into()),
+        initial_window_size: Some((900.0, 550.0).into()),
         ..Default::default()
     };
     eframe::run_native(Box::new(App::new()), options);
