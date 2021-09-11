@@ -1,5 +1,5 @@
 use eframe::{
-    egui::{self, color::Color32, TextureId},
+    egui::{self, color::Color32, InputState, Key, TextureId},
     epi,
 };
 use les::{Bus, Cpu, Ppu};
@@ -8,6 +8,8 @@ const PATTERN_SIZE: (usize, usize) = (256, 128);
 const NAMETABLE_SIZE: (usize, usize) = (256, 240);
 const PALETTES_SIZE: (usize, usize) = (256, 32);
 const DISPLAY_SIZE: (usize, usize) = (256, 240);
+
+const CYCLES_PER_FRAME: usize = 21441960 / 12 / 60;
 
 struct App {
     bus: Bus,
@@ -37,7 +39,7 @@ impl App {
             cpu,
             bus,
 
-            speed: 2048,
+            speed: CYCLES_PER_FRAME,
             pal_index: 0,
             nm_index: 0,
 
@@ -60,7 +62,7 @@ impl App {
         ui.label(format!("PC: {:04X}    SP: {:02X}", s.pc, s.sp));
         ui.label(format!("P: {:?}    {:02X}", s.p, s.p.to_u8()));
         ui.label(format!("CYCLES: {}", cycles));
-        ui.add(egui::Slider::new(speed, 0..=10000).text("speed"));
+        ui.add(egui::Slider::new(speed, 0..=(CYCLES_PER_FRAME * 2)).text("speed"));
 
         ui.button("RESET").clicked()
     }
@@ -68,6 +70,7 @@ impl App {
     fn ppu_control(ui: &mut egui::Ui, ppu: &Ppu) {
         let t = ppu.timing();
         ui.label(format!("TIMING: ({}, {})", t.0, t.1));
+        ui.label(format!("FRAME TIME: {}", ui.input().unstable_dt * 1000.0));
     }
 
     fn pattern_control(ui: &mut egui::Ui, tex: &Option<TextureId>, pal_index: &mut usize) {
@@ -144,6 +147,33 @@ impl App {
             );
         }
     }
+
+    fn collect_input(input: &InputState) -> (les::InputStates, les::InputStates) {
+        (
+            les::InputStates {
+                a: input.key_down(Key::Z),
+                b: input.key_down(Key::X),
+                select: input.key_down(Key::C),
+                start: input.key_down(Key::V),
+                up: input.key_down(Key::ArrowUp),
+                down: input.key_down(Key::ArrowDown),
+                left: input.key_down(Key::ArrowLeft),
+                right: input.key_down(Key::ArrowRight),
+            },
+            Default::default(),
+        )
+    }
+
+    fn update_emu(&mut self, input: &InputState) {
+        let input = Self::collect_input(input);
+        self.bus.set_input0(input.0);
+        self.bus.set_input1(input.1);
+
+        let end = self.bus.cycles() + self.speed;
+        while self.bus.cycles() < end {
+            self.cpu.exec(&mut self.bus);
+        }
+    }
 }
 
 impl epi::App for App {
@@ -152,6 +182,7 @@ impl epi::App for App {
     }
 
     fn update(&mut self, ctx: &egui::CtxRef, frame: &mut epi::Frame<'_>) {
+        self.update_emu(ctx.input());
         self.render_ppu(frame);
 
         let Self {
@@ -166,9 +197,6 @@ impl epi::App for App {
             display,
             ..
         } = self;
-        for _ in 0..*speed {
-            cpu.exec(bus);
-        }
 
         egui::CentralPanel::default().show(ctx, |ui| {
             ui.vertical_centered_justified(|ui| {
@@ -187,6 +215,7 @@ impl epi::App for App {
                 });
                 if Self::cpu_control(ui, cpu, bus.cycles(), speed) {
                     cpu.reset(bus);
+                    *speed = CYCLES_PER_FRAME;
                 }
 
                 ui.vertical_centered(|ui| {

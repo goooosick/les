@@ -1,4 +1,7 @@
-use crate::{Cartridge, Ppu};
+use crate::{
+    joystick::{InputStates, Joystick},
+    Cartridge, Ppu,
+};
 
 const RAM_SIZE: usize = 0x0800;
 const REG_SIZE: usize = 0x20;
@@ -9,6 +12,7 @@ pub struct Bus {
 
     ppu: Ppu,
     cart: Cartridge,
+    joystick: Joystick,
 
     cycles: usize,
 }
@@ -21,6 +25,7 @@ impl Bus {
 
             ppu: Ppu::new(cart.mirroring()),
             cart,
+            joystick: Default::default(),
 
             cycles: 0,
         }
@@ -46,6 +51,7 @@ impl Bus {
             0x0000..=0x1fff => self.ram[addr as usize & 0x07ff] = data,
             0x2000..=0x3fff => self.ppu.write(&mut self.cart, addr, data),
             0x4014 => self.dma(data),
+            0x4016..=0x4017 => self.joystick.write(addr, data),
             0x4000..=0x401f => self.io_regs[addr as usize - 0x4000] = data,
             0x4020..=0xffff => self.cart.write(addr, data),
         }
@@ -56,9 +62,18 @@ impl Bus {
             0x0000..=0x1fff => self.ram[addr as usize & 0x07ff],
             0x2000..=0x3fff => self.ppu.read(&self.cart, addr),
             0x4014 => 0x00,
+            0x4016..=0x4017 => self.joystick.read(addr),
             0x4000..=0x401f => self.io_regs[addr as usize - 0x4000],
             0x4020..=0xffff => self.cart.read(addr),
         }
+    }
+
+    pub fn set_input0(&mut self, states: InputStates) {
+        self.joystick.set_input0(states);
+    }
+
+    pub fn set_input1(&mut self, states: InputStates) {
+        self.joystick.set_input1(states);
     }
 
     pub(crate) fn nmi(&mut self) -> bool {
