@@ -12,6 +12,7 @@ const OAM_SIZE: usize = 0x100;
 const NAMETABLE_SIZE: usize = 0x1000;
 const PALETTES_SIZE: usize = 0x20;
 const BUF_SIZE: usize = 256 * 240 * 3;
+const ACTIVE_OAM_SIZE: usize = 0x20;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 enum WriteLatch {
@@ -25,8 +26,23 @@ struct RenderState {
     tile_bits: ShiftReg,
     attr_bits: ShiftReg,
 
+    sp_n: usize,
+    sp_count: usize,
+    sec_oam: Box<[u8; ACTIVE_OAM_SIZE]>,
+    sprites: Box<[SpriteState; 8]>,
+    sp_zero: bool,
+
     buf: Box<[u8; BUF_SIZE]>,
     back_buf: Box<[u8; BUF_SIZE]>,
+}
+
+#[derive(Default, Debug)]
+struct SpriteState {
+    x: u8,
+    tile_bits: ShiftReg,
+    attr_bits: ShiftReg,
+    is_sp_zero: bool,
+    priority: u8,
 }
 
 pub struct Ppu {
@@ -99,6 +115,7 @@ impl Ppu {
                 std::mem::swap(&mut self.rs.buf, &mut self.rs.back_buf);
             }
 
+            // skip one dot on odd frame
             if self.dot == 339 {
                 if self.mask.show_bg() && (self.frames % 2 != 0) {
                     self.dot = 340;
@@ -119,72 +136,210 @@ impl Ppu {
     }
 
     fn update(&mut self, cart: &Cartridge) {
-        if self.mask.show_bg() {
-            self.update_bg(cart);
+        // on visible scanlines, output pixels
+        if (0..240).contains(&self.line) && (1..257).contains(&self.dot) {
+            let (mut bg_tile, mut bg_color) = (0, 0);
+            let (mut sp_tile, mut sp_color) = (0, 0);
+            let mut sp_priority = 0;
+            let mut sp_zero = false;
+
+            if self.mask.show_bg() {
+                let bg_pal = self.rs.attr_bits.get(self.x);
+                bg_tile = self.rs.tile_bits.get(self.x);
+                bg_color = self.read_vram(cart, 0x3f00 + bg_pal * 4 + bg_tile);
+            }
+
+            if self.mask.show_sp() {
+                for sp in self.rs.sprites.iter() {
+                    if sp.x == 0 {
+                        let sp_pal = sp.attr_bits.get(0);
+                        let tile = sp.tile_bits.get(0);
+                        if tile != 0 {
+                            sp_tile = tile;
+                            sp_color = self.read_vram(cart, 0x3f10 + sp_pal * 4 + sp_tile);
+                            sp_priority = sp.priority;
+
+                            if sp.is_sp_zero {
+                                sp_zero = true;
+                            }
+
+                            break;
+                        }
+                    }
+                }
+            }
+
+            if sp_zero && bg_tile != 0 && sp_tile != 0 {
+                self.status.set_sp0_hit(true);
+            }
+
+            let pal_index = match (bg_tile != 0, sp_tile != 0, sp_priority) {
+                (false, true, _) => sp_color,
+                (true, true, 0) => sp_color,
+                (_, _, _) => bg_color,
+            };
+
+            let index = (self.line * 256 + self.dot - 1) * 3;
+            self.rs.buf[index..][..3].copy_from_slice(&PALETTES[pal_index as usize]);
+
+            for sp in self.rs.sprites.iter_mut() {
+                if sp.x > 0 {
+                    sp.x -= 1;
+                } else {
+                    sp.tile_bits.shift();
+                    sp.attr_bits.shift();
+                }
+            }
+        }
+
+        // on visible scanlines and pre-render scanline, fetch data
+        if (0..240).contains(&self.line) || self.line == 261 {
+            if self.mask.show_bg() {
+                self.update_bg(cart);
+            }
+
+            if self.mask.show_sp() {
+                self.update_sp(cart);
+            }
         }
     }
 
     fn update_bg(&mut self, cart: &Cartridge) {
-        if (0..240).contains(&self.line) || self.line == 261 {
-            if (1..257).contains(&self.dot) || (321..337).contains(&self.dot) {
-                let current_x = self.dot - 1;
+        if (1..257).contains(&self.dot) || (321..337).contains(&self.dot) {
+            self.rs.attr_bits.shift();
+            self.rs.tile_bits.shift();
 
-                // render bg
-                if current_x < 256 && self.line < 240 {
-                    let bg_pal = self.rs.attr_bits.get(self.x);
-                    let bg_color = self.rs.tile_bits.get(self.x);
-                    let pal_index = self.read_vram(cart, 0x3f00 + bg_pal * 4 + bg_color);
-
-                    let index = (self.line * 256 + current_x) * 3;
-                    self.rs.buf[index..][..3].copy_from_slice(&PALETTES[pal_index as usize]);
-                }
-
-                self.rs.attr_bits.shift();
-                self.rs.tile_bits.shift();
-
-                // fetch data
-                match current_x % 8 {
-                    1 => self.rs.nm_byte = self.read_vram(cart, self.v.tile_addr()),
-                    3 => self.rs.attr_byte = self.read_vram(cart, self.v.attr_addr()),
-                    5 => {}
-                    7 => {
-                        let b = (self.rs.attr_byte
+            match (self.dot - 1) % 8 {
+                1 => self.rs.nm_byte = self.read_vram(cart, self.v.tile_addr()),
+                3 => self.rs.attr_byte = self.read_vram(cart, self.v.attr_addr()),
+                5 => {}
+                7 => {
+                    let (b0, b1, a0, a1) = {
+                        let attr = (self.rs.attr_byte
                             >> ((self.v.coarse_x() & 0b10) + (self.v.coarse_y() & 0b10) * 2))
                             & 0b11;
-                        self.rs
-                            .attr_bits
-                            .load((b & 0b01) * 0xff, ((b & 0b10) >> 1) * 0xff);
-
                         let chr_addr = self.ctrl.bg_pattern_table()
                             + self.v.y()
                             + self.rs.nm_byte as u16 * 0x10;
-                        let (b0, b1) = (
+                        (
                             self.read_vram(cart, chr_addr),
                             self.read_vram(cart, chr_addr + 8),
-                        );
-                        self.rs.tile_bits.load(b0, b1);
+                            attr.get_bit(0) as u8 * 0xff,
+                            attr.get_bit(1) as u8 * 0xff,
+                        )
+                    };
+                    self.rs.tile_bits.latch(b0, b1);
+                    self.rs.attr_bits.latch(a0, a1);
 
-                        // x increment
-                        self.v.inc_coarse_x();
-                    }
-                    _ => {}
+                    // x increment
+                    self.v.inc_coarse_x();
                 }
-
-                // y increment
-                if self.dot == 256 {
-                    self.v.inc_y();
-                }
+                _ => {}
             }
 
-            // update horizontal
-            if self.dot == 257 {
-                self.v.copy_vx(&self.t);
+            // y increment
+            if self.dot == 256 {
+                self.v.inc_y();
             }
+        }
+
+        // update horizontal
+        if self.dot == 257 {
+            self.v.copy_vx(&self.t);
         }
 
         // update vertical
         if self.line == 261 && (280..305).contains(&self.dot) {
             self.v.copy_vy(&self.t);
+        }
+    }
+
+    fn update_sp(&mut self, cart: &Cartridge) {
+        // 1..=64 dots, clear secondary oam
+        if self.dot == 64 {
+            self.rs.sec_oam.fill(0xff);
+            self.rs.sp_n = 0;
+            self.rs.sp_count = 0;
+            self.rs.sp_zero = false;
+            self.status.set_sp_overflow(false);
+        }
+
+        // sprite evaluation
+        if (65..257).contains(&self.dot) {
+            if self.rs.sp_n < 64 {
+                let addr0 = self.rs.sp_n * 4;
+                let y = self.oam[addr0] as usize;
+                if (y..(y + self.ctrl.sp_size())).contains(&self.line) {
+                    if self.rs.sp_count < 8 {
+                        let addr1 = self.rs.sp_count * 4;
+                        self.rs.sec_oam[addr1 + 0] = self.oam[addr0 + 0];
+                        self.rs.sec_oam[addr1 + 1] = self.oam[addr0 + 1];
+                        self.rs.sec_oam[addr1 + 2] = self.oam[addr0 + 2];
+                        self.rs.sec_oam[addr1 + 3] = self.oam[addr0 + 3];
+
+                        self.rs.sp_count += 1;
+                        if self.rs.sp_n == 0 {
+                            self.rs.sp_zero = true;
+                        }
+                    } else {
+                        self.status.set_sp_overflow(true);
+                    }
+                }
+
+                self.rs.sp_n += 1;
+            }
+        }
+
+        // fetch sprite data
+        if (257..321).contains(&self.dot) {
+            if (self.dot - 257) % 8 == 7 {
+                let sp_n = (self.dot - 257) / 8;
+
+                let addr = sp_n * 4;
+                let sp_y = self.line as u16 - self.rs.sec_oam[addr + 0] as u16;
+                let index = self.rs.sec_oam[addr + 1] as u16;
+                let attr = self.rs.sec_oam[addr + 2];
+                let sp_x = self.rs.sec_oam[addr + 3];
+
+                self.rs.sprites[sp_n].x = sp_x;
+                self.rs.sprites[sp_n].is_sp_zero = sp_n == 0 && self.rs.sp_zero;
+
+                if sp_n < self.rs.sp_count {
+                    // 76543210
+                    // ||||||||
+                    // ||||||++- palette of sprite
+                    // |||+++--- unimplemented
+                    // ||+------ priority (0: in front of background; 1: behind background)
+                    // |+------- flip sprite horizontally
+                    // +-------- flip sprite vertically
+
+                    let (mut tile_b0, mut tile_b1, attr_b0, attr_b1) = {
+                        let mut tile_y = sp_y & 0x07;
+
+                        let tile_addr = if self.ctrl.sp_size() == 8 {
+                            tile_y ^= attr.get_bit(7) as u16 * 0x07;
+                            self.ctrl.sp_pattern_table() + index * 0x10
+                        } else {
+                            ((index & 0b01) * 0x1000) + ((index & 0xfe) + (sp_y >= 8) as u16) * 0x10
+                        };
+                        (
+                            self.read_vram(cart, tile_addr + tile_y),
+                            self.read_vram(cart, tile_addr + tile_y + 8),
+                            attr.get_bit(0) as u8 * 0xff,
+                            attr.get_bit(1) as u8 * 0xff,
+                        )
+                    };
+                    if attr.get_bit(6) {
+                        tile_b0 = tile_b0.reverse_bits();
+                        tile_b1 = tile_b1.reverse_bits();
+                    }
+
+                    let sp = &mut self.rs.sprites[sp_n];
+                    sp.tile_bits.load(tile_b0, tile_b1);
+                    sp.attr_bits.load(attr_b0, attr_b1);
+                    sp.priority = attr.get_bit(5) as u8;
+                }
+            }
         }
     }
 
@@ -347,6 +502,12 @@ impl Default for RenderState {
             attr_byte: 0,
             tile_bits: Default::default(),
             attr_bits: Default::default(),
+
+            sp_n: 0,
+            sp_count: 0,
+            sec_oam: Box::new([0xff; ACTIVE_OAM_SIZE]),
+            sprites: Default::default(),
+            sp_zero: false,
 
             buf: Box::new([0u8; BUF_SIZE]),
             back_buf: Box::new([0u8; BUF_SIZE]),

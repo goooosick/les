@@ -252,8 +252,13 @@ impl ShiftReg {
         self.1 >>= 1;
     }
 
-    pub fn load(&mut self, b0: u8, b1: u8) {
+    pub fn latch(&mut self, b0: u8, b1: u8) {
         self.0.set_bits(8..16, b0.reverse_bits() as u16);
         self.1.set_bits(8..16, b1.reverse_bits() as u16);
+    }
+
+    pub fn load(&mut self, b0: u8, b1: u8) {
+        self.0.set_bits(0..8, b0.reverse_bits() as u16);
+        self.1.set_bits(0..8, b1.reverse_bits() as u16);
     }
 }
