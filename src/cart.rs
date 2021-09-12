@@ -1,7 +1,9 @@
 use bit_field::BitField;
 use std::path::Path;
 
-mod mapper00;
+mod mapper000;
+mod mapper002;
+mod mapper003;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Mirroring {
@@ -55,11 +57,13 @@ impl Cartridge {
 
         let offset = offset + rpg_rom.len();
         let chr_banks = data[5] as usize;
-        let chr_rom = data[offset..][..(chr_banks * 0x2000)].to_vec();
+        let chr_len = chr_banks * 0x2000;
+        let mut chr_rom = vec![0u8; chr_banks.max(1) * 0x2000];
+        chr_rom[..chr_len].copy_from_slice(&data[offset..][..chr_len]);
 
         println!("MAPPER: {:02}", mapper_type);
-        println!("RPG ROM: {} * 16KB = {}", rpg_banks, rpg_rom.len());
-        println!("CHR ROM: {} * 8KB = {}", chr_banks, chr_rom.len());
+        println!("RPG ROM: {} * 16KB", rpg_banks);
+        println!("CHR ROM: {} * 8KB", chr_banks);
         println!("MIRRORING: {:?}", mirroring);
 
         Some(Self {
@@ -69,10 +73,12 @@ impl Cartridge {
             chr_rom,
 
             mirroring,
-            mapper: Box::new(match mapper_type {
-                0x00 => mapper00::Mapper00::new(rpg_banks),
+            mapper: match mapper_type {
+                0x00 => Box::new(mapper000::Mapper000::new(rpg_banks)),
+                0x02 => Box::new(mapper002::Mapper002::new(rpg_banks)),
+                0x03 => Box::new(mapper003::Mapper003::new(rpg_banks, chr_banks)),
                 _ => unimplemented!("unimplemented mapper type: {}", mapper_type),
-            }),
+            },
         })
     }
 
@@ -99,7 +105,7 @@ impl Cartridge {
     }
 
     pub fn write_chr(&mut self, addr: u16, data: u8) {
-        self.mapper.write_chr(self.rpg_rom.as_mut(), addr, data)
+        self.mapper.write_chr(self.chr_rom.as_mut(), addr, data)
     }
 
     pub fn mirroring(&self) -> Mirroring {
