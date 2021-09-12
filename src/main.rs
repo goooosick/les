@@ -8,6 +8,7 @@ const PATTERN_SIZE: (usize, usize) = (256, 128);
 const NAMETABLE_SIZE: (usize, usize) = (256, 240);
 const PALETTES_SIZE: (usize, usize) = (256, 32);
 const DISPLAY_SIZE: (usize, usize) = (256, 240);
+const SPRITES_SIZE: (usize, usize) = (256, 16);
 
 const CYCLES_PER_FRAME: usize = 21441960 / 12 / 60;
 
@@ -24,9 +25,11 @@ struct App {
     pattern_data: Vec<u8>,
     nametable_data: Vec<u8>,
     palettes_data: Vec<u8>,
+    sprites_data: Vec<u8>,
     pattern: Option<TextureId>,
     nametable: Option<TextureId>,
     palettes: Option<TextureId>,
+    sprites: Option<TextureId>,
     display: Option<TextureId>,
 }
 
@@ -50,9 +53,11 @@ impl App {
             pattern_data: vec![0u8; PATTERN_SIZE.0 * PATTERN_SIZE.1 * 3],
             nametable_data: vec![0u8; NAMETABLE_SIZE.0 * NAMETABLE_SIZE.1 * 3],
             palettes_data: vec![0u8; PALETTES_SIZE.0 * PALETTES_SIZE.1 * 3],
+            sprites_data: vec![0u8; SPRITES_SIZE.0 * SPRITES_SIZE.1 * 3],
             pattern: None,
             nametable: None,
             palettes: None,
+            sprites: None,
             display: None,
         }
     }
@@ -129,11 +134,20 @@ impl App {
             ui.heading("Palettes");
         });
         if let Some(texture) = self.palettes {
-            ui.centered_and_justified(|ui| {
+            ui.horizontal_top(|ui| {
                 ui.image(texture, (PALETTES_SIZE.0 as f32, PALETTES_SIZE.1 as f32));
             });
         }
+
         ui.separator();
+        ui.vertical_centered(|ui| {
+            ui.heading("Sprites");
+        });
+        if let Some(texture) = self.sprites {
+            ui.horizontal_top(|ui| {
+                ui.image(texture, (SPRITES_SIZE.0 as f32, SPRITES_SIZE.1 as f32));
+            });
+        }
     }
 
     fn render_ppu(&mut self, frame: &mut epi::Frame<'_>) {
@@ -147,10 +161,14 @@ impl App {
             self.nametable_data.as_mut(),
             self.nm_index,
         );
+        self.bus
+            .ppu()
+            .render_sprites(self.bus.cart(), self.sprites_data.as_mut());
         self.bus.ppu().render_palettes(self.palettes_data.as_mut());
 
         let data = [
             (self.pattern_data.as_ref(), PATTERN_SIZE, &mut self.pattern),
+            (self.sprites_data.as_ref(), SPRITES_SIZE, &mut self.sprites),
             (
                 self.nametable_data.as_ref(),
                 NAMETABLE_SIZE,
@@ -231,6 +249,7 @@ impl epi::App for App {
 
         egui::SidePanel::left("left")
             .resizable(false)
+            .default_width(256.0)
             .show(ctx, |ui| {
                 self.left_panel(ui);
             });
@@ -253,7 +272,7 @@ impl epi::App for App {
 
 fn main() {
     let options = eframe::NativeOptions {
-        initial_window_size: Some((900.0, 550.0).into()),
+        initial_window_size: Some((900.0, 600.0).into()),
         ..Default::default()
     };
     eframe::run_native(Box::new(App::new()), options);

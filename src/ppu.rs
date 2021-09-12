@@ -1,5 +1,6 @@
 use self::regs::*;
 use crate::cart::{Cartridge, Mirroring};
+use bit_field::BitField;
 use std::cell::Cell;
 
 pub use self::palettes::PALETTES;
@@ -360,10 +361,8 @@ impl Ppu {
         buf: &mut [u8],
         row_offset: usize,
         chr_addr: u16,
-        pal_index: u16,
+        color: impl Fn(u16) -> u16,
     ) {
-        use bit_field::BitField;
-
         let mut index = 0;
 
         for x in 0..8 {
@@ -372,8 +371,7 @@ impl Ppu {
 
             for _ in 0..8 {
                 let b = (p0.get_bit(7) as u16) | ((p1.get_bit(7) as u16) << 1);
-                let pal_addr = pal_index + b + 0x3f00;
-                let c = &PALETTES[self.read_vram(cart, pal_addr) as usize];
+                let c = &PALETTES[self.read_vram(cart, color(b)) as usize];
 
                 buf[index..][..3].copy_from_slice(c);
                 index += 3;
@@ -399,7 +397,7 @@ impl Ppu {
                 &mut buf[start_index..],
                 row_offset,
                 plane_addr as u16,
-                pal_index,
+                |b| pal_index + b + 0x3f00,
             );
         };
 
@@ -429,7 +427,7 @@ impl Ppu {
                     &mut buf[start_index..],
                     row_offset,
                     plane_addr as u16,
-                    pal_index,
+                    |b| pal_index + b + 0x3f00,
                 );
             }
         }
@@ -445,5 +443,35 @@ impl Ppu {
                     buf.copy_from_slice(c);
                 });
             });
+    }
+
+    pub fn render_sprites(&self, cart: &Cartridge, buf: &mut [u8]) {
+        let n_row = 2;
+        let n_col = 32;
+        let row_offset = (n_col - 1) * 8 * 3;
+
+        for i in 0..n_row {
+            for j in 0..n_col {
+                let addr = (i * n_col + j) * 4;
+                let index = self.oam[addr + 1] as u16;
+                let attr = self.oam[addr + 2];
+
+                let tile_index = if self.ctrl.sp_size() == 8 {
+                    self.ctrl.sp_pattern_table() + index * 0x10
+                } else {
+                    ((index & 0b01) * 0x1000) + (index & 0xfe) * 0x10
+                };
+                let pal_index = attr.get_bits(0..2) as u16 * 4;
+                let start_index = ((i * 8) * n_col * 8 + j * 8) * 3;
+
+                self.reder_tile(cart, &mut buf[start_index..], row_offset, tile_index, |b| {
+                    if b == 0 {
+                        0x3f00
+                    } else {
+                        0x3f10 + pal_index + b
+                    }
+                });
+            }
+        }
     }
 }
