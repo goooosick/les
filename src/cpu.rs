@@ -51,7 +51,7 @@ impl Cpu {
         self.serve_interrupt(RESET_VECTOR, bus);
     }
 
-    pub fn exec(&mut self, bus: &mut Bus) {
+    pub(crate) fn exec(&mut self, bus: &mut Bus) {
         self.op = self.fetch_byte(bus);
         self.addressing(self.op, bus);
 

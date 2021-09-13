@@ -235,11 +235,11 @@ impl App {
             let cycles = (dt / (1.0 / 60.0) * (self.speed as f32)) as usize;
             let end = self.bus.cycles() + cycles;
             while self.bus.cycles() < end {
-                self.cpu.exec(&mut self.bus);
+                self.bus.exec(&mut self.cpu);
             }
         } else {
             if self.step {
-                self.cpu.exec(&mut self.bus);
+                self.bus.exec(&mut self.cpu);
                 self.step = false;
             }
         }
