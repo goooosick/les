@@ -12,6 +12,12 @@ const SPRITES_SIZE: (usize, usize) = (256, 16);
 
 const CYCLES_PER_FRAME: usize = 21441960 / 12 / 60;
 
+struct ImageTexture {
+    id: Option<TextureId>,
+    size: (usize, usize),
+    data: Vec<Color32>,
+}
+
 struct App {
     bus: Bus,
     cpu: Cpu,
@@ -23,15 +29,7 @@ struct App {
     nm_index: usize,
     scale: f32,
 
-    pattern_data: Vec<u8>,
-    nametable_data: Vec<u8>,
-    palettes_data: Vec<u8>,
-    sprites_data: Vec<u8>,
-    pattern: Option<TextureId>,
-    nametable: Option<TextureId>,
-    palettes: Option<TextureId>,
-    sprites: Option<TextureId>,
-    display: Option<TextureId>,
+    textures: Vec<ImageTexture>,
 }
 
 impl App {
@@ -40,6 +38,21 @@ impl App {
         let mut bus = les::Bus::new(cart);
         let mut cpu = les::Cpu::default();
         cpu.reset(&mut bus);
+
+        let mut textures = Vec::new();
+        for size in [
+            PATTERN_SIZE,
+            NAMETABLE_SIZE,
+            PALETTES_SIZE,
+            SPRITES_SIZE,
+            DISPLAY_SIZE,
+        ] {
+            textures.push(ImageTexture {
+                id: None,
+                size,
+                data: vec![Color32::BLACK; size.0 * size.1],
+            });
+        }
 
         Self {
             cpu,
@@ -52,15 +65,7 @@ impl App {
             nm_index: 0,
             scale: 1.0,
 
-            pattern_data: vec![0u8; PATTERN_SIZE.0 * PATTERN_SIZE.1 * 3],
-            nametable_data: vec![0u8; NAMETABLE_SIZE.0 * NAMETABLE_SIZE.1 * 3],
-            palettes_data: vec![0u8; PALETTES_SIZE.0 * PALETTES_SIZE.1 * 3],
-            sprites_data: vec![0u8; SPRITES_SIZE.0 * SPRITES_SIZE.1 * 3],
-            pattern: None,
-            nametable: None,
-            palettes: None,
-            sprites: None,
-            display: None,
+            textures,
         }
     }
 
@@ -116,97 +121,48 @@ impl App {
     }
 
     fn right_panel(&mut self, ui: &mut egui::Ui) {
-        ui.vertical_centered(|ui| {
-            ui.heading("Pattern Table");
-        });
-        if let Some(texture) = self.pattern {
+        let headings = ["Pattern Table", "Nametable", "Palettes", "Sprites"];
+
+        for (i, heading) in headings.iter().enumerate() {
             ui.vertical_centered(|ui| {
-                ui.image(texture, (PATTERN_SIZE.0 as f32, PATTERN_SIZE.1 as f32));
-                ui.add(egui::Slider::new(&mut self.pal_index, 0..=7).text("palette"));
+                ui.heading(*heading);
             });
-        }
-        ui.separator();
+            if let Some(texture) = self.textures[i].id {
+                ui.vertical_centered(|ui| {
+                    let size = self.textures[i].size;
+                    ui.image(texture, (size.0 as f32, size.1 as f32));
 
-        ui.vertical_centered(|ui| {
-            ui.heading("Nametable");
-        });
-        if let Some(texture) = self.nametable {
-            ui.vertical_centered(|ui| {
-                ui.image(texture, (NAMETABLE_SIZE.0 as f32, NAMETABLE_SIZE.1 as f32));
-                ui.add(egui::Slider::new(&mut self.nm_index, 0..=3).text("name table"));
-            });
-        }
-        ui.separator();
-
-        ui.vertical_centered(|ui| {
-            ui.heading("Palettes");
-        });
-        if let Some(texture) = self.palettes {
-            ui.horizontal_top(|ui| {
-                ui.image(texture, (PALETTES_SIZE.0 as f32, PALETTES_SIZE.1 as f32));
-            });
-        }
-
-        ui.separator();
-        ui.vertical_centered(|ui| {
-            ui.heading("Sprites");
-        });
-        if let Some(texture) = self.sprites {
-            ui.horizontal_top(|ui| {
-                ui.image(texture, (SPRITES_SIZE.0 as f32, SPRITES_SIZE.1 as f32));
-            });
+                    if i == 0 {
+                        ui.add(egui::Slider::new(&mut self.pal_index, 0..=7).text("palette"));
+                    }
+                    if i == 1 {
+                        ui.add(egui::Slider::new(&mut self.nm_index, 0..=3).text("name table"));
+                    }
+                });
+            }
+            ui.separator();
         }
     }
 
     fn render_ppu(&mut self, frame: &mut epi::Frame<'_>) {
-        self.bus.ppu().render_pattern_table(
-            self.bus.cart(),
-            self.pattern_data.as_mut(),
-            self.pal_index,
-        );
-        self.bus.ppu().render_name_table(
-            self.bus.cart(),
-            self.nametable_data.as_mut(),
-            self.nm_index,
-        );
-        self.bus
-            .ppu()
-            .render_sprites(self.bus.cart(), self.sprites_data.as_mut());
-        self.bus.ppu().render_palettes(self.palettes_data.as_mut());
+        let ppu = self.bus.ppu();
+        let cart = self.bus.cart();
 
-        let data = [
-            (self.pattern_data.as_ref(), PATTERN_SIZE, &mut self.pattern),
-            (self.sprites_data.as_ref(), SPRITES_SIZE, &mut self.sprites),
-            (
-                self.nametable_data.as_ref(),
-                NAMETABLE_SIZE,
-                &mut self.nametable,
-            ),
-            (
-                self.palettes_data.as_ref(),
-                PALETTES_SIZE,
-                &mut self.palettes,
-            ),
-            (
-                self.bus.ppu().display_buf(),
-                DISPLAY_SIZE,
-                &mut self.display,
-            ),
-        ];
+        ppu.render_pattern_table(cart, self.textures[0].data.as_mut(), self.pal_index);
+        ppu.render_name_table(cart, self.textures[1].data.as_mut(), self.nm_index);
+        ppu.render_palettes(self.textures[2].data.as_mut());
+        ppu.render_sprites(cart, self.textures[3].data.as_mut());
+        ppu.render_display(self.textures[4].data.as_mut());
 
-        for (data, size, tex) in data {
-            if let Some(tex) = tex.take() {
+        for im in self.textures.iter_mut() {
+            if let Some(tex) = im.id.take() {
                 frame.tex_allocator().free(tex);
             }
 
-            *tex = Some(
-                frame.tex_allocator().alloc_srgba_premultiplied(
-                    size,
-                    data.chunks_exact(3)
-                        .map(|c| Color32::from_rgb(c[0], c[1], c[2]))
-                        .collect::<Vec<_>>()
-                        .as_ref(),
-                ),
+            im.id = Some(
+                frame
+                    .tex_allocator()
+                    .alloc_srgba_premultiplied(im.size, &im.data),
             );
         }
     }
@@ -272,13 +228,11 @@ impl epi::App for App {
         egui::CentralPanel::default().show(ctx, |ui| {
             ui.vertical_centered_justified(|ui| {
                 ui.heading("Display");
-                if let Some(tex) = self.display {
+                let im = &self.textures[4];
+                if let Some(tex) = im.id {
                     ui.image(
                         tex,
-                        (
-                            DISPLAY_SIZE.0 as f32 * self.scale,
-                            DISPLAY_SIZE.1 as f32 * self.scale,
-                        ),
+                        (im.size.0 as f32 * self.scale, im.size.1 as f32 * self.scale),
                     );
                 }
             });

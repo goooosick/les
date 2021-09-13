@@ -1,7 +1,7 @@
 use self::regs::*;
 use crate::cart::{Cartridge, Mirroring};
 use bit_field::BitField;
-use std::cell::Cell;
+use std::{cell::Cell, ops::IndexMut};
 
 pub use self::palettes::PALETTES;
 
@@ -516,10 +516,10 @@ impl Default for RenderState {
 }
 
 impl Ppu {
-    fn reder_tile(
+    fn reder_tile<T: IndexMut<usize, Output = u8>>(
         &self,
         cart: &Cartridge,
-        buf: &mut [u8],
+        buf: &mut [T],
         row_offset: usize,
         chr_addr: u16,
         color: impl Fn(u16) -> u16,
@@ -534,8 +534,10 @@ impl Ppu {
                 let b = (p0.get_bit(7) as u16) | ((p1.get_bit(7) as u16) << 1);
                 let c = &PALETTES[self.read_vram(cart, color(b)) as usize];
 
-                buf[index..][..3].copy_from_slice(c);
-                index += 3;
+                buf[index][0] = c[0];
+                buf[index][1] = c[1];
+                buf[index][2] = c[2];
+                index += 1;
 
                 p0 <<= 1;
                 p1 <<= 1;
@@ -545,14 +547,19 @@ impl Ppu {
         }
     }
 
-    pub fn render_pattern_table(&self, cart: &Cartridge, buf: &mut [u8], pal_index: usize) {
+    pub fn render_pattern_table<T: IndexMut<usize, Output = u8>>(
+        &self,
+        cart: &Cartridge,
+        buf: &mut [T],
+        pal_index: usize,
+    ) {
         let pal_index = pal_index as u16 * 4;
 
         let mut render_tile = |i, j, offset| {
             let plane_addr = ((i + offset) * 16 + j) * 0x10;
 
-            let start_index = ((i * 8) * 32 * 8 + (j + offset) * 8) * 3;
-            let row_offset = 31 * 8 * 3;
+            let start_index = (i * 8) * 32 * 8 + (j + offset) * 8;
+            let row_offset = 31 * 8;
             self.reder_tile(
                 cart,
                 &mut buf[start_index..],
@@ -570,7 +577,12 @@ impl Ppu {
         }
     }
 
-    pub fn render_name_table(&self, cart: &Cartridge, buf: &mut [u8], nm_index: usize) {
+    pub fn render_name_table<T: IndexMut<usize, Output = u8>>(
+        &self,
+        cart: &Cartridge,
+        buf: &mut [T],
+        nm_index: usize,
+    ) {
         let chr_offset = self.ctrl.bg_pattern_table() as usize;
 
         for i in 0..30 {
@@ -581,8 +593,8 @@ impl Ppu {
                 let attr = self.nametables[nm_index * 0x400 + 30 * 32 + (i / 4) * 8 + j / 4];
                 let pal_index = ((attr >> ((j & 0b10) + (i & 0b10) * 2)) & 0b11) as u16 * 4;
 
-                let start_index = ((i * 8) * 32 * 8 + j * 8) * 3;
-                let row_offset = 31 * 8 * 3;
+                let start_index = (i * 8) * 32 * 8 + j * 8;
+                let row_offset = 31 * 8;
                 self.reder_tile(
                     cart,
                     &mut buf[start_index..],
@@ -594,22 +606,22 @@ impl Ppu {
         }
     }
 
-    pub fn render_palettes(&self, buf: &mut [u8]) {
-        buf.chunks_exact_mut(16 * 3)
-            .enumerate()
-            .for_each(|(n, buf)| {
-                let n = (n & 0x0f) | ((n & 0x100) >> 4);
-                let c = &PALETTES[self.palettes[n] as usize];
-                buf.chunks_exact_mut(3).for_each(|buf| {
-                    buf.copy_from_slice(c);
-                });
+    pub fn render_palettes<T: IndexMut<usize, Output = u8>>(&self, buf: &mut [T]) {
+        buf.chunks_exact_mut(16).enumerate().for_each(|(n, buf)| {
+            let n = (n & 0x0f) | ((n & 0x100) >> 4);
+            let c = &PALETTES[self.palettes[n] as usize];
+            buf.iter_mut().for_each(|buf| {
+                buf[0] = c[0];
+                buf[1] = c[1];
+                buf[2] = c[2];
             });
+        });
     }
 
-    pub fn render_sprites(&self, cart: &Cartridge, buf: &mut [u8]) {
+    pub fn render_sprites<T: IndexMut<usize, Output = u8>>(&self, cart: &Cartridge, buf: &mut [T]) {
         let n_row = 2;
         let n_col = 32;
-        let row_offset = (n_col - 1) * 8 * 3;
+        let row_offset = (n_col - 1) * 8;
 
         for i in 0..n_row {
             for j in 0..n_col {
@@ -623,7 +635,7 @@ impl Ppu {
                     ((index & 0b01) * 0x1000) + (index & 0xfe) * 0x10
                 };
                 let pal_index = attr.get_bits(0..2) as u16 * 4;
-                let start_index = ((i * 8) * n_col * 8 + j * 8) * 3;
+                let start_index = (i * 8) * n_col * 8 + j * 8;
 
                 self.reder_tile(cart, &mut buf[start_index..], row_offset, tile_index, |b| {
                     if b == 0 {
@@ -632,6 +644,18 @@ impl Ppu {
                         0x3f10 + pal_index + b
                     }
                 });
+            }
+        }
+    }
+
+    pub fn render_display<T: IndexMut<usize, Output = u8>>(&self, buf: &mut [T]) {
+        for i in 0..240 {
+            for j in 0..256 {
+                let index = i * 256 + j;
+                let c = &self.rs.back_buf[(index * 3)..];
+                buf[index][0] = c[0];
+                buf[index][1] = c[1];
+                buf[index][2] = c[2];
             }
         }
     }
