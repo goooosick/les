@@ -21,6 +21,7 @@ struct App {
     speed: usize,
     pal_index: usize,
     nm_index: usize,
+    scale: f32,
 
     pattern_data: Vec<u8>,
     nametable_data: Vec<u8>,
@@ -49,6 +50,7 @@ impl App {
             speed: CYCLES_PER_FRAME,
             pal_index: 0,
             nm_index: 0,
+            scale: 1.0,
 
             pattern_data: vec![0u8; PATTERN_SIZE.0 * PATTERN_SIZE.1 * 3],
             nametable_data: vec![0u8; NAMETABLE_SIZE.0 * NAMETABLE_SIZE.1 * 3],
@@ -79,17 +81,18 @@ impl App {
             ui.separator();
 
             ui.horizontal(|ui| {
-                if ui.button("RESET").clicked() {
+                if ui.button("RESET").clicked() || ui.input().key_pressed(Key::R) {
                     self.cpu.reset(&mut self.bus);
                     self.speed = CYCLES_PER_FRAME;
                 }
-                if ui.button("STEP").clicked() {
+                if ui.button("STEP").clicked() || ui.input().key_pressed(Key::S) {
                     self.pause = true;
                     self.step = true;
                 }
                 if ui
                     .button(["PAUSE", "CONTINUE"][self.pause as usize])
                     .clicked()
+                    || ui.input().key_pressed(Key::A)
                 {
                     self.pause = !self.pause;
                 }
@@ -104,6 +107,11 @@ impl App {
             let t = self.bus.ppu().timing();
             ui.label(format!("TIMING: ({}, {})", t.0, t.1));
             ui.label(format!("FRAME TIME: {}", ui.input().unstable_dt * 1000.0));
+            ui.add(
+                egui::Slider::new(&mut self.scale, 1.0..=3.0)
+                    .clamp_to_range(true)
+                    .text("scale"),
+            );
         }
     }
 
@@ -219,13 +227,13 @@ impl App {
         )
     }
 
-    fn update_emu(&mut self, input: &InputState) {
-        let input = Self::collect_input(input);
-        self.bus.set_input0(input.0);
-        self.bus.set_input1(input.1);
+    fn update_emu(&mut self, dt: f32, inputs: (les::InputStates, les::InputStates)) {
+        self.bus.set_input0(inputs.0);
+        self.bus.set_input1(inputs.1);
 
         if !self.pause {
-            let end = self.bus.cycles() + self.speed;
+            let cycles = (dt / (1.0 / 60.0) * (self.speed as f32)) as usize;
+            let end = self.bus.cycles() + cycles;
             while self.bus.cycles() < end {
                 self.cpu.exec(&mut self.bus);
             }
@@ -244,7 +252,9 @@ impl epi::App for App {
     }
 
     fn update(&mut self, ctx: &egui::CtxRef, frame: &mut epi::Frame<'_>) {
-        self.update_emu(ctx.input());
+        let input = ctx.input();
+
+        self.update_emu(input.unstable_dt, Self::collect_input(input));
         self.render_ppu(frame);
 
         egui::SidePanel::left("left")
@@ -263,7 +273,13 @@ impl epi::App for App {
             ui.vertical_centered_justified(|ui| {
                 ui.heading("Display");
                 if let Some(tex) = self.display {
-                    ui.image(tex, (DISPLAY_SIZE.0 as f32, DISPLAY_SIZE.1 as f32));
+                    ui.image(
+                        tex,
+                        (
+                            DISPLAY_SIZE.0 as f32 * self.scale,
+                            DISPLAY_SIZE.1 as f32 * self.scale,
+                        ),
+                    );
                 }
             });
         });

@@ -256,7 +256,7 @@ impl Ppu {
 
     fn update_sp(&mut self, cart: &Cartridge) {
         // 1..=64 dots, clear secondary oam
-        if self.dot == 64 {
+        if self.dot == 64 && self.line != 261 {
             self.rs.sec_oam.fill(0xff);
             self.rs.sp_n = 0;
             self.rs.sp_count = 0;
@@ -265,7 +265,7 @@ impl Ppu {
         }
 
         // sprite evaluation
-        if (65..257).contains(&self.dot) {
+        if (65..257).contains(&self.dot) && self.line != 261 {
             if self.rs.sp_n < 64 {
                 let addr0 = self.rs.sp_n * 4;
                 let y = self.oam[addr0] as usize;
@@ -314,13 +314,13 @@ impl Ppu {
                     // +-------- flip sprite vertically
 
                     let (mut tile_b0, mut tile_b1, attr_b0, attr_b1) = {
-                        let mut tile_y = sp_y & 0x07;
+                        let tile_y = (sp_y & 0x07) ^ (attr.get_bit(7) as u16 * 0x07);
 
                         let tile_addr = if self.ctrl.sp_size() == 8 {
-                            tile_y ^= attr.get_bit(7) as u16 * 0x07;
                             self.ctrl.sp_pattern_table() + index * 0x10
                         } else {
-                            ((index & 0b01) * 0x1000) + ((index & 0xfe) + (sp_y >= 8) as u16) * 0x10
+                            let tile_offset = ((sp_y >= 8) ^ attr.get_bit(7)) as u16;
+                            ((index & 0b01) * 0x1000) + ((index & 0xfe) + tile_offset) * 0x10
                         };
                         (
                             self.read_vram(cart, tile_addr + tile_y),
