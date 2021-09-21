@@ -49,7 +49,7 @@ impl Apu {
             pulse2: Pulse::new(true),
             triangle: Triangle::new(),
             noise: Noise::new(),
-            dmc: Dmc {},
+            dmc: Dmc::new(),
 
             cycles: 0,
             samples: VecDeque::new(),
@@ -90,6 +90,14 @@ impl Apu {
             self.noise.tick_eve();
             self.dmc.tick_eve();
         }
+    }
+
+    pub fn dmc_request(&mut self) -> Option<u16> {
+        self.dmc.read_sample()
+    }
+
+    pub fn dmc_response(&mut self, data: u8) {
+        self.dmc.write_sample(data);
     }
 
     pub fn reset(&mut self) {
@@ -167,17 +175,17 @@ impl Apu {
 }
 
 lazy_static::lazy_static! {
-    static ref PULSE_TABLE: [f32; 32] = {
-        let mut table = [0.0f32; 32];
-        for n in 1..32 {
+    static ref PULSE_TABLE: [f32; 31] = {
+        let mut table = [0.0f32; 31];
+        for n in 1..31 {
             table[n] = 95.52 / (8128.0 / n as f32 + 100.0);
         }
         table
     };
 
-    static ref TND_TABLE: [f32; 204] = {
-        let mut table = [0.0f32; 204];
-        for n in 1..204 {
+    static ref TND_TABLE: [f32; 203] = {
+        let mut table = [0.0f32; 203];
+        for n in 1..203 {
             table[n] = 163.67 / (24329.0 / n as f32 + 100.0);
         }
         table

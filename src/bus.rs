@@ -55,13 +55,24 @@ impl Bus {
     }
 
     pub(crate) fn tick(&mut self) {
-        let Self { ppu, cart, .. } = self;
-
         self.cycles += 1;
+
+        self.apu.tick();
+        if let Some(addr) = self.apu.dmc_request() {
+            let data = self.inspect(addr);
+            self.tick_ppu();
+            self.apu.dmc_response(data);
+            self.tick_ppu();
+        } else {
+            self.tick_ppu();
+        }
+    }
+
+    fn tick_ppu(&mut self) {
+        let Self { ppu, cart, .. } = self;
         for _ in 0..3 {
             ppu.tick(cart);
         }
-        self.apu.tick();
     }
 
     pub fn read(&mut self, addr: u16) -> u8 {
