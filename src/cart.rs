@@ -23,7 +23,7 @@ pub struct Cartridge {
     chr_rom: Vec<u8>,
 
     mirroring: Mirroring,
-    mapper: Box<dyn Mapper>,
+    mapper: Box<dyn Mapper + Send>,
 }
 
 impl Cartridge {
