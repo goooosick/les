@@ -63,7 +63,7 @@ impl Cpu {
             bus.tick();
         }
 
-        if bus.nmi() {
+        if bus.nmi().is_some() {
             self.p.b = false;
             self.serve_interrupt(NMI_VECTOR, bus);
         }

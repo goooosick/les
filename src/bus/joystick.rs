@@ -28,7 +28,6 @@ impl Joystick {
                 self.input0.load();
                 self.input1.load();
             }
-            0x4017 => {}
             _ => unreachable!(),
         }
     }

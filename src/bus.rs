@@ -1,6 +1,8 @@
+use std::collections::VecDeque;
+
 use self::dma::Dma;
 use self::joystick::Joystick;
-use crate::{Cartridge, Cpu, Ppu};
+use crate::{Apu, Cartridge, Cpu, Ppu};
 
 pub use joystick::InputStates;
 
@@ -14,6 +16,7 @@ pub struct Bus {
     ram: Box<[u8; RAM_SIZE]>,
     io_regs: Box<[u8; REG_SIZE]>,
 
+    apu: Apu,
     ppu: Ppu,
     cart: Cartridge,
     joystick: Joystick,
@@ -28,6 +31,7 @@ impl Bus {
             ram: Box::new([0u8; RAM_SIZE]),
             io_regs: Box::new([0u8; REG_SIZE]),
 
+            apu: Apu::new(),
             ppu: Ppu::new(cart.mirroring()),
             cart,
             joystick: Default::default(),
@@ -57,6 +61,7 @@ impl Bus {
         for _ in 0..3 {
             ppu.tick(cart);
         }
+        self.apu.tick();
     }
 
     pub fn read(&mut self, addr: u16) -> u8 {
@@ -70,7 +75,9 @@ impl Bus {
             0x0000..=0x1fff => self.ram[addr as usize & 0x07ff] = data,
             0x2000..=0x3fff => self.ppu.write(&mut self.cart, addr, data),
             0x4014 => self.dma.start(self.cycles, data),
-            0x4016..=0x4017 => self.joystick.write(addr, data),
+            0x4000..=0x4013 => self.apu.write(addr, data),
+            0x4015 | 0x4017 => self.apu.write(addr, data),
+            0x4016 => self.joystick.write(addr, data),
             0x4000..=0x401f => self.io_regs[addr as usize - 0x4000] = data,
             0x4020..=0xffff => self.cart.write(addr, data),
         }
@@ -81,6 +88,7 @@ impl Bus {
             0x0000..=0x1fff => self.ram[addr as usize & 0x07ff],
             0x2000..=0x3fff => self.ppu.read(&self.cart, addr),
             0x4014 => 0x00,
+            0x4000..=0x4015 => self.apu.read(addr),
             0x4016..=0x4017 => self.joystick.read(addr),
             0x4000..=0x401f => self.io_regs[addr as usize - 0x4000],
             0x4020..=0xffff => self.cart.read(addr),
@@ -95,12 +103,13 @@ impl Bus {
         self.joystick.set_input1(states);
     }
 
-    pub(crate) fn nmi(&mut self) -> bool {
+    pub(crate) fn nmi(&mut self) -> Option<()> {
         self.ppu.consume_nmi()
     }
 
     pub(crate) fn reset(&mut self) {
         self.ppu.reset();
+        self.apu.reset();
     }
 
     pub fn cycles(&self) -> usize {
@@ -113,5 +122,13 @@ impl Bus {
 
     pub fn cart(&self) -> &Cartridge {
         &self.cart
+    }
+
+    pub fn apu(&self) -> &Apu {
+        &self.apu
+    }
+
+    pub fn audio_samples(&mut self) -> &mut VecDeque<f32> {
+        self.apu.samples()
     }
 }

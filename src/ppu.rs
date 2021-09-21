@@ -63,7 +63,7 @@ pub struct Ppu {
     frames: usize,
     line: usize,
     dot: usize,
-    nmi: bool,
+    nmi: Option<()>,
     rs: RenderState,
 
     nm_base_address: [u16; 4],
@@ -89,7 +89,7 @@ impl Ppu {
             frames: 0,
             line: 0,
             dot: 0,
-            nmi: false,
+            nmi: None,
             rs: Default::default(),
 
             nm_base_address: mirroring.to_adresses(),
@@ -103,7 +103,7 @@ impl Ppu {
             self.status.set_vblank(true);
 
             if self.ctrl.nmi_on() {
-                self.nmi = true;
+                self.nmi = Some(());
             }
         }
 
@@ -343,10 +343,8 @@ impl Ppu {
         }
     }
 
-    pub(crate) fn consume_nmi(&mut self) -> bool {
-        let nmi = self.nmi;
-        self.nmi = false;
-        nmi
+    pub(crate) fn consume_nmi(&mut self) -> Option<()> {
+        self.nmi.take()
     }
 
     pub(crate) fn reset(&mut self) {
