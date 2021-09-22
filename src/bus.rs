@@ -142,4 +142,9 @@ impl Bus {
     pub fn audio_samples(&mut self) -> &mut VecDeque<f32> {
         self.apu.samples()
     }
+
+    pub fn load_cart(&mut self, cart: Cartridge) {
+        self.cart = cart;
+        self.audio_samples().clear();
+    }
 }

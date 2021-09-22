@@ -27,6 +27,18 @@ pub struct Cartridge {
 }
 
 impl Cartridge {
+    pub fn empty() -> Self {
+        Cartridge {
+            expansion: Box::new([0u8; EXPANSION_ROM_SIZE]),
+            rpg_ram: Box::new([0u8; RPG_RAM_SIZE]),
+            rpg_rom: Vec::new(),
+            chr_rom: Vec::new(),
+
+            mirroring: Mirroring::Horizontal,
+            mapper: Box::new(NullMapper),
+        }
+    }
+
     pub fn load(file: impl AsRef<Path>) -> Option<Self> {
         let data = std::fs::read(file).ok()?;
         if data[..4] != [b'N', b'E', b'S', 0x1a] {
@@ -131,4 +143,24 @@ pub trait Mapper {
 
     fn read_chr(&self, chr: &[u8], addr: u16) -> u8;
     fn write_chr(&mut self, chr: &mut [u8], addr: u16, data: u8) {}
+}
+
+struct NullMapper;
+
+impl Mapper for NullMapper {
+    fn read_rpg(&self, _: &[u8], addr: u16) -> u8 {
+        // an infinite loop program
+        match addr {
+            0xfffc => 0x00,
+            0xfffd => 0xff,
+            0xff00 => 0x4c,
+            0xff01 => 0x00,
+            0xff02 => 0xff,
+            _ => unreachable!(),
+        }
+    }
+
+    fn read_chr(&self, _: &[u8], _: u16) -> u8 {
+        0x00
+    }
 }
