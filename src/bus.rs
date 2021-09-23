@@ -143,6 +143,11 @@ impl Bus {
         self.apu.samples()
     }
 
+    /// override channel state (pulse1, pulse2, triangle, noise, dmc)
+    pub fn set_audio_control(&mut self, states: &[bool; 5]) {
+        self.apu.set_channels(states);
+    }
+
     pub fn load_cart(&mut self, cart: Cartridge) {
         self.cart = cart;
         self.audio_samples().clear();

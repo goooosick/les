@@ -126,6 +126,7 @@ struct GuiContext {
     nm_index: usize,
     scale: f32,
 
+    channels: [bool; 5],
     textures: Vec<ImageTexture>,
 }
 
@@ -157,6 +158,8 @@ impl App {
                 pal_index: 0,
                 nm_index: 0,
                 scale: 1.0,
+
+                channels: [true; 5],
                 textures,
             },
         }
@@ -193,8 +196,8 @@ impl App {
                     emu.pause = !emu.pause;
                 }
             });
-            ui.separator();
         }
+        ui.separator();
 
         ui.vertical_centered(|ui| {
             ui.heading("PPU");
@@ -208,6 +211,24 @@ impl App {
                     .clamp_to_range(true)
                     .text("scale"),
             );
+        }
+        ui.separator();
+
+        ui.vertical_centered(|ui| {
+            ui.heading("APU");
+        });
+        {
+            let mut changed = false;
+            for (state, name) in gui
+                .channels
+                .iter_mut()
+                .zip(["Pulse1", "Pulse2", "Triangle", "Noise", "DMC"])
+            {
+                changed |= ui.checkbox(state, name).changed();
+            }
+            if changed {
+                emu.bus.set_audio_control(&gui.channels);
+            }
         }
     }
 

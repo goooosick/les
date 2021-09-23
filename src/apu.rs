@@ -39,6 +39,7 @@ pub struct Apu {
 
     cycles: usize,
     samples: VecDeque<f32>,
+    channel_ctrl: [u8; 5],
 }
 
 impl Apu {
@@ -53,6 +54,7 @@ impl Apu {
 
             cycles: 0,
             samples: VecDeque::new(),
+            channel_ctrl: [1u8; 5],
         }
     }
 
@@ -69,10 +71,13 @@ impl Apu {
         }
         self.triangle.tick();
 
-        let pulse_out = PULSE_TABLE[(self.pulse1.sample() + self.pulse2.sample()) as usize];
-        let tnd_out = TND_TABLE
-            [(self.triangle.sample() * 3 + self.noise.sample() * 2 + self.dmc.sample()) as usize];
-        self.samples.push_back(pulse_out + tnd_out);
+        let pulse_index = self.pulse1.sample() * self.channel_ctrl[0]
+            + self.pulse2.sample() * self.channel_ctrl[1];
+        let tnd_index = self.triangle.sample() * 3 * self.channel_ctrl[2]
+            + self.noise.sample() * 2 * self.channel_ctrl[3]
+            + self.dmc.sample() * self.channel_ctrl[4];
+        self.samples
+            .push_back(PULSE_TABLE[pulse_index as usize] + TND_TABLE[tnd_index as usize]);
     }
 
     fn frame_tick(&mut self, step: Step) {
@@ -171,6 +176,12 @@ impl Apu {
 
     pub fn samples(&mut self) -> &mut VecDeque<f32> {
         &mut self.samples
+    }
+
+    pub fn set_channels(&mut self, states: &[bool; 5]) {
+        for i in 0..5 {
+            self.channel_ctrl[i] = states[i] as u8;
+        }
     }
 }
 
