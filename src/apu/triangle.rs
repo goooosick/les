@@ -35,13 +35,16 @@ impl Triangle {
 
 impl super::Channel for Triangle {
     fn sample(&mut self) -> u8 {
-        SEQ[self.step] * self.len_counter.count()
+        SEQ[self.step]
     }
 
     fn tick(&mut self) {
         if self.timer.tick() {
             if self.linear_counter != 0 && self.len_counter.count() != 0 {
-                self.step = (self.step + 1) % 32;
+                // silence when frequency is too high
+                if self.timer.period() >= 2 {
+                    self.step = (self.step + 1) % 32;
+                }
             }
         }
     }
