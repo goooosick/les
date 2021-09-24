@@ -66,16 +66,15 @@ impl super::Channel for Pulse {
     }
 
     fn write_reg2(&mut self, data: u8) {
-        let p = self.timer.period() & 0xff00;
-        self.timer.set_period(p | data as usize);
+        self.timer.set_period_low(data);
     }
 
     fn write_reg3(&mut self, data: u8) {
         self.envelope.restart();
         self.len_counter.load(data & 0xf8);
 
-        let p = self.timer.period() & 0x00ff;
-        self.timer.set_period(p | ((data as usize & 0b111) << 8));
+        self.step = 0;
+        self.timer.set_period_high(data);
     }
 
     fn set_enable(&mut self, enable: bool) {

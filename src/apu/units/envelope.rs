@@ -51,7 +51,7 @@ impl Envelope {
         self.looping = data.get_bit(5);
         self.constant = data.get_bit(4);
         self.volume = data.get_bits(0..4);
-        self.divider.set_period(self.volume as usize);
+        self.divider.set_period(self.volume as usize + 1);
     }
 
     pub fn restart(&mut self) {

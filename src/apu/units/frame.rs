@@ -1,6 +1,8 @@
-use super::Divider;
 use bit_field::BitField;
 use std::cell::Cell;
+
+const FRAME_FREQUENCY: f32 = 240.0;
+const FRAME_PERIOD: f32 = crate::CPU_FREQUENCY / FRAME_FREQUENCY;
 
 // mode 0:    mode 1:       function
 // ---------  -----------  -----------------------------
@@ -23,7 +25,7 @@ bitflags::bitflags! {
 
 #[derive(Debug)]
 pub struct FrameCounter {
-    divider: Divider,
+    counter: f32,
     step: usize,
     mode: Mode,
     irq_on: bool,
@@ -33,7 +35,7 @@ pub struct FrameCounter {
 impl FrameCounter {
     pub fn new() -> Self {
         Self {
-            divider: Divider::with_period(crate::CPU_FREQUENCY / crate::APU_FRAME_FREQUENCY),
+            counter: FRAME_PERIOD,
             step: 0,
             mode: Mode::Step4,
             irq_on: false,
@@ -44,7 +46,8 @@ impl FrameCounter {
     pub fn tick(&mut self) -> Step {
         let mut step = Step::empty();
 
-        if self.divider.tick() {
+        self.counter -= 1.0;
+        if self.counter < 1.0 {
             match self.mode {
                 Mode::Step4 => {
                     self.step = (self.step + 1) % 4;
@@ -60,6 +63,8 @@ impl FrameCounter {
                     step.set(Step::ENVELOPE, self.step != 3);
                 }
             }
+
+            self.counter += FRAME_PERIOD;
         }
 
         step
@@ -67,7 +72,8 @@ impl FrameCounter {
 
     pub fn load(&mut self, data: u8) {
         self.step = 0;
-        self.divider.reset();
+        self.counter = FRAME_PERIOD;
+
         self.mode = if data.get_bit(7) {
             Mode::Step5
         } else {

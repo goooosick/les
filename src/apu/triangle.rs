@@ -75,13 +75,11 @@ impl super::Channel for Triangle {
     fn write_reg1(&mut self, _: u8) {}
 
     fn write_reg2(&mut self, data: u8) {
-        let p = self.timer.period() & 0xff00;
-        self.timer.set_period(p | data as usize);
+        self.timer.set_period_low(data);
     }
 
     fn write_reg3(&mut self, data: u8) {
-        let p = self.timer.period() & 0x00ff;
-        self.timer.set_period(p | ((data as usize & 0b111) << 8));
+        self.timer.set_period_high(data);
 
         self.len_counter.load(data & 0xf8);
         self.linear_reload = true;

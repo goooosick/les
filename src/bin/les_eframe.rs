@@ -58,7 +58,9 @@ where
     let sample_rate = config.sample_rate.0 as f32;
     let channels = config.channels as usize;
 
-    let sample_step = (les::CPU_FREQUENCY as f32 / sample_rate) as usize;
+    let sample_step = les::CPU_FREQUENCY / sample_rate;
+    let mut sample_delta = sample_step;
+
     let stream = device
         .build_output_stream(
             config,
@@ -81,22 +83,21 @@ where
                     data.fill(cpal::Sample::from(&0.0f32));
                 } else {
                     let sample_len = data.len() / channels;
-                    let sample_count = sample_len * sample_step;
+                    let sample_count = sample_len * sample_step.ceil() as usize;
 
                     while bus.apu().sample_len() < sample_count {
                         bus.exec(cpu);
                     }
 
-                    let samples = bus
-                        .audio_samples()
-                        .drain(..sample_count)
-                        .collect::<Vec<_>>();
-                    samples
-                        .chunks_exact(sample_step)
-                        .zip(data.chunks_exact_mut(channels))
-                        .for_each(|(samples, data)| {
-                            data.fill(cpal::Sample::from(samples.last().unwrap()));
-                        });
+                    let mut i = 0;
+                    let samples = bus.audio_samples();
+                    for d in data.chunks_exact_mut(channels) {
+                        d.fill(cpal::Sample::from(&samples[i]));
+
+                        i += sample_delta.trunc() as usize;
+                        sample_delta = sample_delta.fract() + sample_step;
+                    }
+                    let _ = bus.audio_samples().drain(0..i).collect::<Vec<_>>();
                 }
             },
             |err| eprintln!("an error occurred on stream: {}", err),

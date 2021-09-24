@@ -40,7 +40,7 @@ where
     let sample_rate = config.sample_rate.0 as f32;
     let channels = config.channels as usize;
 
-    let sample_step = (les::CPU_FREQUENCY as f32 / sample_rate) as usize;
+    let sample_step = (les::CPU_FREQUENCY / sample_rate) as usize;
     let stream = device
         .build_output_stream(
             config,

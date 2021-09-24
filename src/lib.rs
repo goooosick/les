@@ -10,11 +10,8 @@ pub use cart::Cartridge;
 pub use cpu::Cpu;
 pub use ppu::Ppu;
 
-/// NES NTSC: (341 * 262 - 0.5) * 4 * 60 = 2144_1960
-pub const MASTER_CLOCK: usize = 2144_1960;
+/// NES NTSC
+pub const MASTER_CLOCK: f32 = 2147_7272.0;
 
-/// cpu frequency = 2144_1960 / 12 = 178_6830
-pub const CPU_FREQUENCY: usize = MASTER_CLOCK / 12;
-
-/// apu frame sequencer frequency
-pub const APU_FRAME_FREQUENCY: usize = 240;
+/// cpu frequency
+pub const CPU_FREQUENCY: f32 = MASTER_CLOCK / 12.0;

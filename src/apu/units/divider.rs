@@ -1,6 +1,7 @@
 #[derive(Debug)]
 pub struct Divider {
     period: usize,
+    raw_period: usize,
     counter: usize,
 }
 
@@ -8,21 +9,18 @@ impl Divider {
     pub fn new() -> Self {
         Self {
             period: 0,
+            raw_period: 0,
             counter: 0,
         }
     }
 
-    pub fn with_period(period: usize) -> Self {
-        Self { period, counter: 0 }
-    }
-
     pub fn tick(&mut self) -> bool {
-        if self.counter > 0 {
-            self.counter -= 1;
-            false
-        } else {
+        self.counter = self.counter.saturating_sub(1);
+        if self.counter == 0 {
             self.counter = self.period;
             true
+        } else {
+            false
         }
     }
 
@@ -32,13 +30,27 @@ impl Divider {
 
     pub fn set_period(&mut self, period: usize) {
         self.period = period;
+        self.raw_period = period;
+    }
+
+    pub fn set_raw_period(&mut self, period: usize) {
+        self.raw_period = period;
+        self.period = period + 1;
+    }
+
+    pub fn set_period_low(&mut self, data: u8) {
+        let p = self.raw_period & 0xff00;
+        self.raw_period = p | data as usize;
+        self.period = self.raw_period + 1;
+    }
+
+    pub fn set_period_high(&mut self, data: u8) {
+        let p = self.raw_period & 0x00ff;
+        self.raw_period = p | ((data as usize & 0b111) << 8);
+        self.period = self.raw_period + 1;
     }
 
     pub fn period(&self) -> usize {
-        self.period
-    }
-
-    pub fn count(&self) -> usize {
-        self.counter
+        self.raw_period
     }
 }

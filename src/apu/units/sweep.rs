@@ -30,17 +30,17 @@ impl Sweep {
     pub fn tick(&mut self, timer: &mut Divider) {
         self.sweep(timer);
 
-        if self.divider.count() == 0 {
+        if self.divider.tick() {
             if self.enable && self.shift > 0 && !self.muting {
-                timer.set_period(self.shifter);
+                timer.set_raw_period(self.shifter);
             }
+
+            self.reload = false;
         }
 
-        if self.divider.count() == 0 || self.reload {
+        if self.reload {
             self.reload = false;
             self.divider.reset();
-        } else {
-            self.divider.tick();
         }
     }
 
@@ -58,7 +58,7 @@ impl Sweep {
 
     pub fn load(&mut self, data: u8) {
         self.enable = data.get_bit(7);
-        self.divider.set_period(data.get_bits(4..7) as usize);
+        self.divider.set_period(data.get_bits(4..7) as usize + 1);
         self.neg = data.get_bit(3);
         self.shift = data.get_bits(0..3);
 
