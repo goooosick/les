@@ -65,12 +65,10 @@ pub struct Ppu {
     dot: usize,
     nmi: Option<()>,
     rs: RenderState,
-
-    nm_base_address: [u16; 4],
 }
 
 impl Ppu {
-    pub fn new(mirroring: Mirroring) -> Self {
+    pub fn new() -> Self {
         Self {
             nametables: Box::new([0u8; NAMETABLE_SIZE]),
             palettes: Box::new([0u8; PALETTES_SIZE]),
@@ -91,8 +89,6 @@ impl Ppu {
             dot: 0,
             nmi: None,
             rs: Default::default(),
-
-            nm_base_address: mirroring.to_adresses(),
         }
     }
 
@@ -455,7 +451,7 @@ impl Ppu {
         let addr = addr & 0x3fff;
         match addr {
             0x0000..=0x1fff => cart.read_chr(addr),
-            0x2000..=0x3eff => self.nametables[self.nm_addr(addr)],
+            0x2000..=0x3eff => self.nametables[cart.nm_addr(addr)],
             0x3f00..=0x3fff => {
                 let addr = (addr & 0x1f) as usize;
                 match addr {
@@ -471,7 +467,7 @@ impl Ppu {
         let addr = addr & 0x3fff;
         match addr {
             0x0000..=0x1fff => cart.write_chr(addr, data),
-            0x2000..=0x3eff => self.nametables[self.nm_addr(addr)] = data,
+            0x2000..=0x3eff => self.nametables[cart.nm_addr(addr)] = data,
             0x3f00..=0x3fff => {
                 let data = data & 0x3f;
                 let addr = (addr & 0x1f) as usize;
@@ -485,11 +481,6 @@ impl Ppu {
             }
             _ => unreachable!(),
         }
-    }
-
-    fn nm_addr(&self, addr: u16) -> usize {
-        let n = (addr & 0xeff) >> 10;
-        (self.nm_base_address[n as usize] + (addr & 0x3ff)) as usize
     }
 }
 

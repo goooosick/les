@@ -23,6 +23,7 @@ pub struct Cartridge {
     chr_rom: Vec<u8>,
 
     mirroring: Mirroring,
+    nm_base_address: [u16; 4],
     mapper: Box<dyn Mapper + Send>,
 }
 
@@ -34,6 +35,7 @@ impl Cartridge {
             rpg_rom: Vec::new(),
             chr_rom: Vec::new(),
 
+            nm_base_address: Mirroring::Horizontal.to_adresses(),
             mirroring: Mirroring::Horizontal,
             mapper: Box::new(NullMapper),
         }
@@ -85,6 +87,7 @@ impl Cartridge {
             chr_rom,
 
             mirroring,
+            nm_base_address: mirroring.to_adresses(),
             mapper: match mapper_type {
                 0x00 => Box::new(mapper000::Mapper000::new(rpg_banks)),
                 0x02 => Box::new(mapper002::Mapper002::new(rpg_banks)),
@@ -122,6 +125,11 @@ impl Cartridge {
 
     pub fn mirroring(&self) -> Mirroring {
         self.mirroring
+    }
+
+    pub fn nm_addr(&self, addr: u16) -> usize {
+        let n = (addr & 0xeff) >> 10;
+        (self.nm_base_address[n as usize] + (addr & 0x3ff)) as usize
     }
 }
 

@@ -7,6 +7,10 @@ pub struct Dma {
 }
 
 impl Dma {
+    pub fn reset(&mut self) {
+        self.dma_active = false;
+    }
+
     pub fn active(&self) -> bool {
         self.dma_active
     }

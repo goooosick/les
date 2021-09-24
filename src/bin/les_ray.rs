@@ -56,8 +56,8 @@ impl GuiContext {
             .size(width, height)
             .title("LES")
             .resizable()
+            .vsync()
             .build();
-        rl.set_target_fps(60);
 
         let render_texture = rl
             .load_render_texture(&thread, DISPLAY_SIZE.0 as u32, DISPLAY_SIZE.1 as u32)

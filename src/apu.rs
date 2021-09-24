@@ -107,6 +107,7 @@ impl Apu {
 
     pub fn reset(&mut self) {
         self.write(0x4015, 0x00);
+        self.samples.clear();
     }
 
     pub fn read(&self, addr: u16) -> u8 {

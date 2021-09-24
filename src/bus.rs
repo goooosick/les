@@ -32,7 +32,7 @@ impl Bus {
             io_regs: Box::new([0u8; REG_SIZE]),
 
             apu: Apu::new(),
-            ppu: Ppu::new(cart.mirroring()),
+            ppu: Ppu::new(),
             cart,
             joystick: Default::default(),
             dma: Default::default(),
@@ -121,6 +121,8 @@ impl Bus {
     pub(crate) fn reset(&mut self) {
         self.ppu.reset();
         self.apu.reset();
+        self.dma.reset();
+        self.cycles = 0;
     }
 
     pub fn cycles(&self) -> usize {
@@ -150,6 +152,5 @@ impl Bus {
 
     pub fn load_cart(&mut self, cart: Cartridge) {
         self.cart = cart;
-        self.audio_samples().clear();
     }
 }
