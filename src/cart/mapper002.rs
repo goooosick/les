@@ -1,3 +1,5 @@
+use super::Mirroring;
+
 /// 002, UxROM
 ///
 /// 0x8000-0xbfff: 16 KB switchable PRG banks,
@@ -6,10 +8,12 @@
 pub struct Mapper002 {
     rpg_bank0: usize,
     rpg_bank1: usize,
+
+    mirroring: Mirroring,
 }
 
 impl Mapper002 {
-    pub fn new(rpg_banks: usize) -> Self {
+    pub fn new(mirroring: Mirroring, rpg_banks: usize) -> Self {
         assert!(
             rpg_banks <= 256,
             "invalid banks for Mapper002, rpg: {}",
@@ -19,6 +23,8 @@ impl Mapper002 {
         Self {
             rpg_bank0: 0,
             rpg_bank1: rpg_banks - 1,
+
+            mirroring,
         }
     }
 }
@@ -45,5 +51,9 @@ impl super::Mapper for Mapper002 {
 
     fn write_chr(&mut self, chr: &mut [u8], addr: u16, data: u8) {
         chr[addr as usize] = data;
+    }
+
+    fn mirroring(&self) -> Mirroring {
+        self.mirroring
     }
 }

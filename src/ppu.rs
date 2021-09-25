@@ -369,18 +369,18 @@ impl Ppu {
     pub fn read(&self, cart: &Cartridge, addr: u16) -> u8 {
         let addr = (addr - 0x2000) & 0x07;
         match addr {
-            0x00 => panic!("ppu read: {:02x}", 0x00),
-            0x01 => panic!("ppu read: {:02x}", 0x01),
+            0x00 => 0x00,
+            0x01 => 0x00,
             0x02 => {
                 let b = self.status.get();
                 self.status.set_vblank(false);
                 self.w.set(WriteLatch::Step0);
                 b
             }
-            0x03 => panic!("ppu read: {:02x}", 0x03),
+            0x03 => 0x00,
             0x04 => self.oam[self.oam_addr],
-            0x05 => panic!("ppu read: {:02x}", 0x05),
-            0x06 => panic!("ppu read: {:02x}", 0x06),
+            0x05 => 0x00,
+            0x06 => 0x00,
             0x07 => {
                 let addr = self.v.addr();
                 let data = self.data_buf.get();
@@ -407,7 +407,7 @@ impl Ppu {
                 self.t.set_nm(self.ctrl.nametable());
             }
             0x01 => self.mask.set(data),
-            0x02 => panic!("ppu write: {:02x}", 0x02),
+            0x02 => {}
             0x03 => self.oam_addr = data as usize,
             0x04 => {
                 self.oam[self.oam_addr] = data;

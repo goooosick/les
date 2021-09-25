@@ -2,19 +2,30 @@ use bit_field::BitField;
 use std::path::Path;
 
 mod mapper000;
+mod mapper001;
 mod mapper002;
 mod mapper003;
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum Mirroring {
-    Horizontal,
-    Vertical,
-    SingleScreen,
-    FourScreen,
-}
-
 const EXPANSION_ROM_SIZE: usize = 0x1fe0;
 const RPG_RAM_SIZE: usize = 0x2000;
+
+const MIRRORING_MAP: [[usize; 4]; 5] = [
+    [0x000, 0x000, 0x400, 0x400], // Horizontal
+    [0x000, 0x400, 0x000, 0x400], // Vertical
+    [0x000, 0x000, 0x000, 0x000], // SingleScreen0
+    [0x400, 0x400, 0x400, 0x400], // SingleScreen1
+    [0x000, 0x400, 0x800, 0xc00], // FourScreen
+];
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[repr(usize)]
+pub enum Mirroring {
+    Horizontal = 0,
+    Vertical = 1,
+    SingleScreen0 = 2,
+    SingleScreen1 = 3,
+    FourScreen = 4,
+}
 
 pub struct Cartridge {
     expansion: Box<[u8; EXPANSION_ROM_SIZE]>,
@@ -22,8 +33,6 @@ pub struct Cartridge {
     rpg_rom: Vec<u8>,
     chr_rom: Vec<u8>,
 
-    mirroring: Mirroring,
-    nm_base_address: [u16; 4],
     mapper: Box<dyn Mapper + Send>,
 }
 
@@ -35,8 +44,6 @@ impl Cartridge {
             rpg_rom: Vec::new(),
             chr_rom: Vec::new(),
 
-            nm_base_address: Mirroring::Horizontal.to_adresses(),
-            mirroring: Mirroring::Horizontal,
             mapper: Box::new(NullMapper),
         }
     }
@@ -53,14 +60,12 @@ impl Cartridge {
         let f6 = data[6];
         let _ram = f6.get_bit(1);
         let trainer = f6.get_bit(2);
-        let mirroring = {
-            match (f6 & 0b01) | ((f6 >> 2) & 0b10) {
-                0b00 => Mirroring::Horizontal,
-                0b01 => Mirroring::Vertical,
-                0b10 => Mirroring::SingleScreen,
-                0b11 => Mirroring::FourScreen,
-                _ => unreachable!(),
-            }
+        let mirroring = if f6.get_bit(3) {
+            Mirroring::FourScreen
+        } else if f6.get_bit(0) {
+            Mirroring::Vertical
+        } else {
+            Mirroring::Horizontal
         };
 
         let mapper_type = (data[7] & 0xf0) | (f6 >> 4);
@@ -70,14 +75,16 @@ impl Cartridge {
         let rpg_rom = data[offset..][..(rpg_banks * 0x4000)].to_vec();
 
         let offset = offset + rpg_rom.len();
-        let chr_banks = data[5] as usize;
-        let chr_len = chr_banks * 0x2000;
-        let mut chr_rom = vec![0u8; chr_banks.max(1) * 0x2000];
+        let raw_chr_banks = data[5] as usize;
+        let chr_len = raw_chr_banks * 0x2000;
+
+        let chr_banks = raw_chr_banks.max(1);
+        let mut chr_rom = vec![0u8; chr_banks * 0x2000];
         chr_rom[..chr_len].copy_from_slice(&data[offset..][..chr_len]);
 
-        println!("MAPPER: {:02}", mapper_type);
+        println!("MAPPER: {:03}", mapper_type);
         println!("RPG ROM: {} * 16KB", rpg_banks);
-        println!("CHR ROM: {} * 8KB", chr_banks);
+        println!("CHR ROM: {} * 8KB", raw_chr_banks);
         println!("MIRRORING: {:?}", mirroring);
 
         Some(Self {
@@ -86,12 +93,11 @@ impl Cartridge {
             rpg_rom,
             chr_rom,
 
-            mirroring,
-            nm_base_address: mirroring.to_adresses(),
             mapper: match mapper_type {
-                0x00 => Box::new(mapper000::Mapper000::new(rpg_banks)),
-                0x02 => Box::new(mapper002::Mapper002::new(rpg_banks)),
-                0x03 => Box::new(mapper003::Mapper003::new(rpg_banks, chr_banks)),
+                0 => Box::new(mapper000::Mapper000::new(mirroring, rpg_banks)),
+                1 => Box::new(mapper001::Mapper001::new(mirroring, rpg_banks)),
+                2 | 66 => Box::new(mapper002::Mapper002::new(mirroring, rpg_banks)),
+                3 => Box::new(mapper003::Mapper003::new(mirroring, rpg_banks, chr_banks)),
                 _ => unimplemented!("unimplemented mapper type: {}", mapper_type),
             },
         })
@@ -123,24 +129,10 @@ impl Cartridge {
         self.mapper.write_chr(self.chr_rom.as_mut(), addr, data)
     }
 
-    pub fn mirroring(&self) -> Mirroring {
-        self.mirroring
-    }
-
     pub fn nm_addr(&self, addr: u16) -> usize {
-        let n = (addr & 0xeff) >> 10;
-        (self.nm_base_address[n as usize] + (addr & 0x3ff)) as usize
-    }
-}
-
-impl Mirroring {
-    pub fn to_adresses(&self) -> [u16; 4] {
-        match self {
-            Mirroring::Horizontal => [0x000, 0x000, 0x800, 0x800],
-            Mirroring::Vertical => [0x000, 0x400, 0x000, 0x400],
-            Mirroring::SingleScreen => [0x000, 0x000, 0x000, 0x000],
-            Mirroring::FourScreen => [0x000, 0x400, 0x800, 0xc00],
-        }
+        let n = (addr as usize & 0xeff) >> 10;
+        let addr = addr as usize & 0x3ff;
+        MIRRORING_MAP[self.mapper.mirroring() as usize][n] + addr
     }
 }
 
@@ -151,6 +143,8 @@ pub trait Mapper {
 
     fn read_chr(&self, chr: &[u8], addr: u16) -> u8;
     fn write_chr(&mut self, chr: &mut [u8], addr: u16, data: u8) {}
+
+    fn mirroring(&self) -> Mirroring;
 }
 
 struct NullMapper;
@@ -170,5 +164,9 @@ impl Mapper for NullMapper {
 
     fn read_chr(&self, _: &[u8], _: u16) -> u8 {
         0x00
+    }
+
+    fn mirroring(&self) -> Mirroring {
+        Mirroring::FourScreen
     }
 }
