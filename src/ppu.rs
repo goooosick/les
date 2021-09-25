@@ -63,7 +63,7 @@ pub struct Ppu {
     frames: usize,
     line: usize,
     dot: usize,
-    nmi: Option<()>,
+    nmi: bool,
     rs: RenderState,
 }
 
@@ -87,7 +87,7 @@ impl Ppu {
             frames: 0,
             line: 0,
             dot: 0,
-            nmi: None,
+            nmi: false,
             rs: Default::default(),
         }
     }
@@ -99,7 +99,7 @@ impl Ppu {
             self.status.set_vblank(true);
 
             if self.ctrl.nmi_on() {
-                self.nmi = Some(());
+                self.nmi = true;
             }
         }
 
@@ -339,8 +339,8 @@ impl Ppu {
         }
     }
 
-    pub(crate) fn consume_nmi(&mut self) -> Option<()> {
-        self.nmi.take()
+    pub(crate) fn poll_nmi(&mut self) -> bool {
+        std::mem::replace(&mut self.nmi, false)
     }
 
     pub(crate) fn reset(&mut self) {

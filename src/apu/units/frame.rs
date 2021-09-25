@@ -79,7 +79,11 @@ impl FrameCounter {
         } else {
             Mode::Step4
         };
+
         self.irq_on = !data.get_bit(6);
+        if !self.irq_on {
+            self.irq_level.take();
+        }
     }
 
     pub fn irq(&self) -> bool {

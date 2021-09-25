@@ -11,7 +11,7 @@ fn main() {
     let emu = {
         let mut bus = Bus::new(Cartridge::empty());
         let mut cpu = Cpu::default();
-        cpu.reset(&mut bus);
+        bus.reset(&mut cpu);
 
         Arc::new(Mutex::new(EmuContext {
             cpu,
@@ -84,11 +84,11 @@ impl GuiContext {
                 if self.rl.is_key_pressed(KeyboardKey::KEY_LEFT_SHIFT) {
                     *pause = !*pause;
                 } else if self.rl.is_key_pressed(KeyboardKey::KEY_R) {
-                    cpu.reset(bus);
+                    bus.reset(cpu);
                 } else if self.rl.is_file_dropped() {
                     let cart = Cartridge::load(&self.rl.get_dropped_files()[0]).unwrap();
                     bus.load_cart(cart);
-                    cpu.reset(bus);
+                    bus.reset(cpu);
 
                     self.rl.clear_dropped_files();
                 } else {

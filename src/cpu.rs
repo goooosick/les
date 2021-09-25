@@ -6,9 +6,12 @@ mod addressing;
 mod op_code;
 mod status;
 
-const NMI_VECTOR: u16 = 0xfffa;
-const RESET_VECTOR: u16 = 0xfffc;
-const IRQ_VECTOR: u16 = 0xfffe;
+#[repr(u16)]
+pub enum Interrupt {
+    NMI = 0xfffa,
+    RESET = 0xfffc,
+    IRQ = 0xfffe,
+}
 
 pub struct Cpu {
     a: u8,
@@ -43,14 +46,6 @@ impl Default for Cpu {
 }
 
 impl Cpu {
-    pub fn reset(&mut self, bus: &mut Bus) {
-        bus.reset();
-
-        *self = Default::default();
-        self.p.b = false;
-        self.serve_interrupt(RESET_VECTOR, bus);
-    }
-
     pub(crate) fn exec(&mut self, bus: &mut Bus) {
         self.op = self.fetch_byte(bus);
         self.addressing(self.op, bus);
@@ -62,20 +57,21 @@ impl Cpu {
         for _ in 0..extra {
             bus.tick();
         }
-
-        if bus.nmi().is_some() {
-            self.p.b = false;
-            self.serve_interrupt(NMI_VECTOR, bus);
-        }
     }
 
-    fn serve_interrupt(&mut self, addr: u16, bus: &mut Bus) {
+    pub(crate) fn interrupt_disabled(&self) -> bool {
+        self.p.i
+    }
+
+    pub(crate) fn serve_interrupt(&mut self, vector: Interrupt, bus: &mut Bus) {
+        self.p.b = false;
+
         bus.tick();
         bus.tick();
         self.p.i = true;
         self.push_word(self.pc, bus);
         self.push_byte(self.p.to_u8(), bus);
-        self.pc = self.read_word(addr, bus);
+        self.pc = self.read_word(vector as u16, bus);
     }
 
     pub fn set_pc(&mut self, addr: u16) {

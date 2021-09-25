@@ -2,7 +2,7 @@ use std::collections::VecDeque;
 
 use self::dma::Dma;
 use self::joystick::Joystick;
-use crate::{Apu, Cartridge, Cpu, Ppu};
+use crate::{cpu::Interrupt, Apu, Cartridge, Cpu, Ppu};
 
 pub use joystick::InputStates;
 
@@ -51,6 +51,12 @@ impl Bus {
             }
         } else {
             cpu.exec(self);
+
+            if self.ppu.poll_nmi() {
+                cpu.serve_interrupt(Interrupt::NMI, self);
+            } else if !cpu.interrupt_disabled() && self.apu.poll_irq() {
+                cpu.serve_interrupt(Interrupt::IRQ, self);
+            }
         }
     }
 
@@ -114,15 +120,13 @@ impl Bus {
         self.joystick.set_input1(states);
     }
 
-    pub(crate) fn nmi(&mut self) -> Option<()> {
-        self.ppu.consume_nmi()
-    }
-
-    pub(crate) fn reset(&mut self) {
+    pub fn reset(&mut self, cpu: &mut Cpu) {
         self.ppu.reset();
         self.apu.reset();
         self.dma.reset();
         self.cycles = 0;
+
+        cpu.serve_interrupt(Interrupt::RESET, self);
     }
 
     pub fn cycles(&self) -> usize {

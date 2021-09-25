@@ -97,11 +97,15 @@ impl Apu {
         }
     }
 
-    pub fn dmc_request(&mut self) -> Option<u16> {
+    pub(crate) fn poll_irq(&mut self) -> bool {
+        self.frame.irq() | self.dmc.irq()
+    }
+
+    pub(crate) fn dmc_request(&mut self) -> Option<u16> {
         self.dmc.read_sample()
     }
 
-    pub fn dmc_response(&mut self, data: u8) {
+    pub(crate) fn dmc_response(&mut self, data: u8) {
         self.dmc.write_sample(data);
     }
 

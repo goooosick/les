@@ -225,7 +225,7 @@ impl Cpu {
 
         self.push_word(self.pc, bus);
         self.push_byte(self.p.to_u8(), bus);
-        self.pc = self.read_word(0xfffe, bus);
+        self.pc = self.read_word(super::Interrupt::IRQ as u16, bus);
     }
 
     fn bcc(&mut self, bus: &mut Bus) {

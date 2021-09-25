@@ -17,7 +17,7 @@ fn main() {
     let emu = {
         let mut bus = les::Bus::new(cart);
         let mut cpu = les::Cpu::default();
-        cpu.reset(&mut bus);
+        bus.reset(&mut cpu);
 
         Arc::new(Mutex::new(EmuContext {
             bus,
@@ -183,7 +183,7 @@ impl App {
 
             ui.horizontal(|ui| {
                 if ui.button("RESET").clicked() || ui.input().key_pressed(Key::R) {
-                    emu.cpu.reset(&mut emu.bus);
+                    emu.bus.reset(&mut emu.cpu);
                 }
                 if ui.button("STEP").clicked() || ui.input().key_pressed(Key::S) {
                     emu.pause = true;
