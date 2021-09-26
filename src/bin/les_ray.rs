@@ -1,6 +1,7 @@
 use cpal::traits::{DeviceTrait, HostTrait, StreamTrait};
 use les::{Bus, Cartridge, Cpu, InputStates};
 use raylib::prelude::*;
+use std::ffi::CStr;
 use std::sync::{Arc, Mutex};
 
 const DISPLAY_SIZE: (i32, i32) = (256, 240);
@@ -42,6 +43,8 @@ struct GuiContext {
 
     render_texture: RenderTexture2D,
     display_scale: i32,
+    draw_fps: bool,
+    paused: bool,
 
     input0: InputFunc,
     input1: InputFunc,
@@ -58,6 +61,16 @@ impl GuiContext {
             .resizable()
             .vsync()
             .build();
+        rl.gui_set_style(
+            GuiControl::DEFAULT,
+            GuiDefaultProperty::TEXT_SIZE as i32,
+            20,
+        );
+        rl.gui_set_style(
+            GuiControl::DEFAULT,
+            GuiDefaultProperty::TEXT_SPACING as i32,
+            2,
+        );
 
         let render_texture = rl
             .load_render_texture(&thread, DISPLAY_SIZE.0 as u32, DISPLAY_SIZE.1 as u32)
@@ -69,6 +82,8 @@ impl GuiContext {
 
             render_texture,
             display_scale,
+            draw_fps: false,
+            paused: false,
 
             input0: Self::collect_keyboard_input,
             input1: Self::collect_gamepad_input,
@@ -81,9 +96,7 @@ impl GuiContext {
                 let mut emu = emu.lock().unwrap();
                 let EmuContext { cpu, bus, pause } = &mut *emu;
 
-                if self.rl.is_key_pressed(KeyboardKey::KEY_LEFT_SHIFT) {
-                    *pause = !*pause;
-                } else if self.rl.is_key_pressed(KeyboardKey::KEY_R) {
+                if self.rl.is_key_pressed(KeyboardKey::KEY_R) {
                     bus.reset(cpu);
                 } else if self.rl.is_file_dropped() {
                     let cart = Cartridge::load(&self.rl.get_dropped_files()[0]).unwrap();
@@ -104,14 +117,16 @@ impl GuiContext {
                             .as_ref(),
                     );
                 }
+
+                *pause = self.paused;
             }
 
-            self.handle_resize();
-            self.draw_texture();
+            self.handle_gui_events();
+            self.draw_gui();
         }
     }
 
-    fn draw_texture(&mut self) {
+    fn draw_gui(&mut self) {
         let mut d = self.rl.begin_drawing(&self.thread);
 
         d.clear_background(Color::GRAY);
@@ -120,17 +135,41 @@ impl GuiContext {
             Vector2::default(),
             0.0,
             self.display_scale as f32,
-            Color::WHITE,
+            if self.paused {
+                Color::GRAY
+            } else {
+                Color::WHITE
+            },
         );
+
+        if self.paused {
+            d.gui_label(
+                Rectangle {
+                    x: 5.0,
+                    y: 5.0,
+                    width: 40.0,
+                    height: 20.0,
+                },
+                Some(CStr::from_bytes_with_nul(b"PAUSED\0").unwrap()),
+            )
+        } else if self.draw_fps {
+            d.draw_fps(5, 5);
+        }
     }
 
-    fn handle_resize(&mut self) {
+    fn handle_gui_events(&mut self) {
         if self.rl.is_key_pressed(KeyboardKey::KEY_EQUAL) {
             self.display_scale = (self.display_scale + 1).min(4);
             self.rl.set_window_size(self.width(), self.height());
         } else if self.rl.is_key_pressed(KeyboardKey::KEY_MINUS) {
             self.display_scale = (self.display_scale - 1).max(1);
             self.rl.set_window_size(self.width(), self.height());
+        } else if self.rl.is_key_pressed(KeyboardKey::KEY_F) {
+            self.draw_fps = !self.draw_fps;
+        } else if self.rl.is_key_pressed(KeyboardKey::KEY_G) {
+            std::mem::swap(&mut self.input0, &mut self.input1);
+        } else if self.rl.is_key_pressed(KeyboardKey::KEY_LEFT_SHIFT) {
+            self.paused = !self.paused;
         }
     }
 
@@ -184,8 +223,10 @@ impl GuiContext {
             };
 
             InputStates {
-                a: rl.is_gamepad_button_down(PAD, GAMEPAD_BUTTON_RIGHT_FACE_DOWN),
-                b: rl.is_gamepad_button_down(PAD, GAMEPAD_BUTTON_RIGHT_FACE_RIGHT),
+                a: rl.is_gamepad_button_down(PAD, GAMEPAD_BUTTON_RIGHT_FACE_DOWN)
+                    | rl.is_gamepad_button_down(PAD, GAMEPAD_BUTTON_RIGHT_TRIGGER_2),
+                b: rl.is_gamepad_button_down(PAD, GAMEPAD_BUTTON_RIGHT_FACE_RIGHT)
+                    | rl.is_gamepad_button_down(PAD, GAMEPAD_BUTTON_LEFT_TRIGGER_2),
                 select: rl.is_gamepad_button_down(PAD, GAMEPAD_BUTTON_MIDDLE_LEFT),
                 start: rl.is_gamepad_button_down(PAD, GAMEPAD_BUTTON_MIDDLE_RIGHT),
                 up: index == 3 || rl.is_gamepad_button_down(PAD, GAMEPAD_BUTTON_LEFT_FACE_UP),
