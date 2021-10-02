@@ -68,10 +68,10 @@ impl Cpu {
 
         bus.tick();
         bus.tick();
-        self.p.i = true;
         self.push_word(self.pc, bus);
         self.push_byte(self.p.to_u8(), bus);
         self.pc = self.read_word(vector as u16, bus);
+        self.p.i = true;
     }
 
     pub fn set_pc(&mut self, addr: u16) {

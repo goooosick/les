@@ -54,8 +54,10 @@ impl Bus {
 
             if self.ppu.poll_nmi() {
                 cpu.serve_interrupt(Interrupt::NMI, self);
-            } else if !cpu.interrupt_disabled() && self.apu.poll_irq() {
-                cpu.serve_interrupt(Interrupt::IRQ, self);
+            } else if !cpu.interrupt_disabled() {
+                if self.apu.poll_irq() || self.cart.poll_irq() {
+                    cpu.serve_interrupt(Interrupt::IRQ, self);
+                }
             }
         }
     }

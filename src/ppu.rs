@@ -92,8 +92,14 @@ impl Ppu {
         }
     }
 
-    pub fn tick(&mut self, cart: &Cartridge) {
+    pub fn tick(&mut self, cart: &mut Cartridge) {
         self.update(cart);
+
+        if self.mask.show_bg() || self.mask.show_sp() {
+            if self.dot == 324 && (self.line < 240 || self.line == 261) {
+                cart.update_scanline();
+            }
+        }
 
         if self.line == 241 && self.dot == 1 {
             self.status.set_vblank(true);

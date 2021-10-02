@@ -5,6 +5,7 @@ mod mapper000;
 mod mapper001;
 mod mapper002;
 mod mapper003;
+mod mapper004;
 
 const EXPANSION_ROM_SIZE: usize = 0x1fe0;
 const RPG_RAM_SIZE: usize = 0x2000;
@@ -98,6 +99,7 @@ impl Cartridge {
                 1 => Box::new(mapper001::Mapper001::new(mirroring, rpg_banks)),
                 2 | 66 => Box::new(mapper002::Mapper002::new(mirroring, rpg_banks)),
                 3 => Box::new(mapper003::Mapper003::new(mirroring, rpg_banks, chr_banks)),
+                4 => Box::new(mapper004::Mapper004::new(mirroring, rpg_banks)),
                 _ => unimplemented!("unimplemented mapper type: {}", mapper_type),
             },
         })
@@ -134,6 +136,14 @@ impl Cartridge {
         let addr = addr as usize & 0x3ff;
         MIRRORING_MAP[self.mapper.mirroring() as usize][n] + addr
     }
+
+    pub(crate) fn update_scanline(&mut self) {
+        self.mapper.update_scanline();
+    }
+
+    pub(crate) fn poll_irq(&mut self) -> bool {
+        self.mapper.poll_irq()
+    }
 }
 
 #[allow(unused_variables)]
@@ -143,6 +153,11 @@ pub trait Mapper {
 
     fn read_chr(&self, chr: &[u8], addr: u16) -> u8;
     fn write_chr(&mut self, chr: &mut [u8], addr: u16, data: u8) {}
+
+    fn update_scanline(&mut self) {}
+    fn poll_irq(&mut self) -> bool {
+        false
+    }
 
     fn mirroring(&self) -> Mirroring;
 }

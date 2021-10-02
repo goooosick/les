@@ -97,7 +97,7 @@ where
                         i += sample_delta.trunc() as usize;
                         sample_delta = sample_delta.fract() + sample_step;
                     }
-                    let _ = bus.audio_samples().drain(0..i).collect::<Vec<_>>();
+                    bus.audio_samples().drain(0..i);
                 }
             },
             |err| eprintln!("an error occurred on stream: {}", err),
