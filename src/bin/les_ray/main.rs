@@ -5,6 +5,24 @@ use std::ffi::CStr;
 use std::sync::{Arc, Mutex};
 
 const DISPLAY_SIZE: (i32, i32) = (256, 240);
+const PATTERN_SIZE: (usize, usize) = (256, 128);
+const NAMETABLE_SIZE: (usize, usize) = (256, 240);
+const PALETTES_SIZE: (usize, usize) = (256, 32);
+const SPRITES_SIZE: (usize, usize) = (256, 16);
+
+const DEBUG_W0: f32 = 300.0;
+const DEBUG_W1: f32 = 535.0;
+const DEBUG_PAD_W: f32 = 10.0;
+const DEBUG_BOUNDS: (f32, f32) = (DEBUG_W0 + DEBUG_W1 + 3.0 * DEBUG_PAD_W, 590.0);
+
+macro_rules! cstr {
+    ($fmt: expr) => { cstr!($fmt,) };
+    ($fmt: expr, $($args: tt) *) => {
+        Some(CStr::from_bytes_with_nul(format!(concat!($fmt, "\0"), $($args) *).as_bytes()).unwrap())
+    };
+}
+
+mod draw_gui;
 
 fn main() {
     raylib::logging::set_trace_log(TraceLogType::LOG_WARNING);
@@ -18,6 +36,7 @@ fn main() {
             cpu,
             bus,
             pause: false,
+            step: false,
         }))
     };
 
@@ -33,6 +52,7 @@ struct EmuContext {
     cpu: Cpu,
     bus: Bus,
     pause: bool,
+    step: bool,
 }
 
 type InputFunc = fn(&RaylibHandle) -> InputStates;
@@ -48,6 +68,11 @@ struct GuiContext {
 
     input0: InputFunc,
     input1: InputFunc,
+
+    debug: bool,
+    pal_index: usize,
+    audio_ctrl: [bool; 5],
+    debug_textures: Vec<(RenderTexture2D, Vec<[u8; 3]>)>,
 }
 
 impl GuiContext {
@@ -61,20 +86,23 @@ impl GuiContext {
             .resizable()
             .vsync()
             .build();
-        rl.gui_set_style(
-            GuiControl::DEFAULT,
-            GuiDefaultProperty::TEXT_SIZE as i32,
-            20,
-        );
-        rl.gui_set_style(
-            GuiControl::DEFAULT,
-            GuiDefaultProperty::TEXT_SPACING as i32,
-            2,
-        );
+        rl.gui_load_style(cstr!("src/bin/les_ray/style.rgs"));
 
         let render_texture = rl
             .load_render_texture(&thread, DISPLAY_SIZE.0 as u32, DISPLAY_SIZE.1 as u32)
             .unwrap();
+
+        let mut debug_textures = vec![];
+        for size in [PATTERN_SIZE, NAMETABLE_SIZE, PALETTES_SIZE, SPRITES_SIZE] {
+            let n = if size == NAMETABLE_SIZE { 4 } else { 1 };
+            for _ in 0..n {
+                debug_textures.push((
+                    rl.load_render_texture(&thread, size.0 as u32, size.1 as u32)
+                        .unwrap(),
+                    vec![[0u8; 3]; size.0 * size.1],
+                ));
+            }
+        }
 
         Self {
             rl,
@@ -87,6 +115,11 @@ impl GuiContext {
 
             input0: Self::collect_keyboard_input,
             input1: Self::collect_gamepad_input,
+
+            debug: false,
+            pal_index: 0,
+            audio_ctrl: [true; 5],
+            debug_textures,
         }
     }
 
@@ -94,7 +127,9 @@ impl GuiContext {
         while !self.rl.window_should_close() {
             {
                 let mut emu = emu.lock().unwrap();
-                let EmuContext { cpu, bus, pause } = &mut *emu;
+                let EmuContext {
+                    cpu, bus, pause, ..
+                } = &mut *emu;
 
                 if self.rl.is_key_pressed(KeyboardKey::KEY_R) {
                     bus.reset(cpu);
@@ -119,58 +154,43 @@ impl GuiContext {
                 }
 
                 *pause = self.paused;
+
+                self.draw_gui(emu);
             }
 
             self.handle_gui_events();
-            self.draw_gui();
-        }
-    }
-
-    fn draw_gui(&mut self) {
-        let mut d = self.rl.begin_drawing(&self.thread);
-
-        d.clear_background(Color::GRAY);
-        d.draw_texture_ex(
-            &self.render_texture,
-            Vector2::default(),
-            0.0,
-            self.display_scale as f32,
-            if self.paused {
-                Color::GRAY
-            } else {
-                Color::WHITE
-            },
-        );
-
-        if self.paused {
-            d.gui_label(
-                Rectangle {
-                    x: 5.0,
-                    y: 5.0,
-                    width: 40.0,
-                    height: 20.0,
-                },
-                Some(CStr::from_bytes_with_nul(b"PAUSED\0").unwrap()),
-            )
-        } else if self.draw_fps {
-            d.draw_fps(5, 5);
         }
     }
 
     fn handle_gui_events(&mut self) {
         if self.rl.is_key_pressed(KeyboardKey::KEY_EQUAL) {
             self.display_scale = (self.display_scale + 1).min(4);
-            self.rl.set_window_size(self.width(), self.height());
+            self.update_window_size();
         } else if self.rl.is_key_pressed(KeyboardKey::KEY_MINUS) {
             self.display_scale = (self.display_scale - 1).max(1);
-            self.rl.set_window_size(self.width(), self.height());
+            self.update_window_size();
         } else if self.rl.is_key_pressed(KeyboardKey::KEY_F) {
             self.draw_fps = !self.draw_fps;
         } else if self.rl.is_key_pressed(KeyboardKey::KEY_G) {
             std::mem::swap(&mut self.input0, &mut self.input1);
         } else if self.rl.is_key_pressed(KeyboardKey::KEY_LEFT_SHIFT) {
             self.paused = !self.paused;
+        } else if self.rl.is_key_pressed(KeyboardKey::KEY_TAB) {
+            self.debug = !self.debug;
+            self.update_window_size();
         }
+    }
+
+    fn update_window_size(&mut self) {
+        let mut w = self.width();
+        let mut h = self.height();
+
+        if self.debug {
+            w = w + DEBUG_BOUNDS.0.ceil() as i32;
+            h = h.max(DEBUG_BOUNDS.1 as i32);
+        }
+
+        self.rl.set_window_size(w, h);
     }
 
     fn width(&self) -> i32 {
@@ -272,9 +292,19 @@ where
             config,
             move |data: &mut [T], _: &cpal::OutputCallbackInfo| {
                 let mut emu = emu.lock().unwrap();
-                let EmuContext { bus, cpu, pause } = &mut *emu;
+                let EmuContext {
+                    bus,
+                    cpu,
+                    pause,
+                    step,
+                } = &mut *emu;
 
                 if *pause {
+                    if *step {
+                        bus.exec(cpu);
+                        *step = false;
+                    }
+
                     bus.audio_samples().clear();
                     data.fill(cpal::Sample::from(&0.0f32));
                 } else {
