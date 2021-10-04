@@ -8,7 +8,7 @@ mod mapper003;
 mod mapper004;
 
 const EXPANSION_ROM_SIZE: usize = 0x1fe0;
-const RPG_RAM_SIZE: usize = 0x2000;
+const PRG_RAM_SIZE: usize = 0x2000;
 const CHR_RAM_SIZE: usize = 0x2000;
 
 const MIRRORING_MAP: [[usize; 4]; 5] = [
@@ -31,8 +31,8 @@ pub enum Mirroring {
 
 pub struct Cartridge {
     expansion: Box<[u8; EXPANSION_ROM_SIZE]>,
-    rpg_ram: Box<[u8; RPG_RAM_SIZE]>,
-    rpg_rom: Vec<u8>,
+    prg_ram: Box<[u8; PRG_RAM_SIZE]>,
+    prg_rom: Vec<u8>,
     chr_ram: Box<[u8; CHR_RAM_SIZE]>,
     chr_rom: Vec<u8>,
 
@@ -43,8 +43,8 @@ impl Cartridge {
     pub fn empty() -> Self {
         Cartridge {
             expansion: Box::new([0u8; EXPANSION_ROM_SIZE]),
-            rpg_ram: Box::new([0u8; RPG_RAM_SIZE]),
-            rpg_rom: Vec::new(),
+            prg_ram: Box::new([0u8; PRG_RAM_SIZE]),
+            prg_rom: Vec::new(),
             chr_ram: Box::new([0u8; CHR_RAM_SIZE]),
             chr_rom: Vec::new(),
 
@@ -75,10 +75,10 @@ impl Cartridge {
         let mapper_type = (data[7] & 0xf0) | (f6 >> 4);
 
         let offset = 0x10 + (trainer as usize) * 0x200;
-        let rpg_banks = data[4] as usize;
-        let rpg_rom = data[offset..][..(rpg_banks * 0x4000)].to_vec();
+        let prg_banks = data[4] as usize;
+        let prg_rom = data[offset..][..(prg_banks * 0x4000)].to_vec();
 
-        let offset = offset + rpg_rom.len();
+        let offset = offset + prg_rom.len();
         let chr_banks = data[5] as usize;
         let chr_len = chr_banks * 0x2000;
 
@@ -86,23 +86,23 @@ impl Cartridge {
         chr_rom[..chr_len].copy_from_slice(&data[offset..][..chr_len]);
 
         println!("MAPPER: {:03}", mapper_type);
-        println!("RPG ROM: {} * 16KB", rpg_banks);
+        println!("PRG ROM: {} * 16KB", prg_banks);
         println!("CHR ROM: {} * 8KB", chr_banks);
         println!("MIRRORING: {:?}", mirroring);
 
         Some(Self {
             expansion: Box::new([0u8; EXPANSION_ROM_SIZE]),
-            rpg_ram: Box::new([0u8; RPG_RAM_SIZE]),
-            rpg_rom,
+            prg_ram: Box::new([0u8; PRG_RAM_SIZE]),
+            prg_rom,
             chr_ram: Box::new([0u8; CHR_RAM_SIZE]),
             chr_rom,
 
             mapper: match mapper_type {
-                0 => Box::new(mapper000::Mapper000::new(mirroring, rpg_banks)),
-                1 => Box::new(mapper001::Mapper001::new(mirroring, rpg_banks)),
-                2 | 66 => Box::new(mapper002::Mapper002::new(mirroring, rpg_banks)),
-                3 => Box::new(mapper003::Mapper003::new(mirroring, rpg_banks, chr_banks)),
-                4 => Box::new(mapper004::Mapper004::new(mirroring, rpg_banks)),
+                0 => Box::new(mapper000::Mapper000::new(mirroring, prg_banks)),
+                1 => Box::new(mapper001::Mapper001::new(mirroring, prg_banks)),
+                2 | 66 => Box::new(mapper002::Mapper002::new(mirroring, prg_banks)),
+                3 => Box::new(mapper003::Mapper003::new(mirroring, prg_banks, chr_banks)),
+                4 => Box::new(mapper004::Mapper004::new(mirroring, prg_banks)),
                 _ => unimplemented!("unimplemented mapper type: {}", mapper_type),
             },
         })
@@ -111,8 +111,8 @@ impl Cartridge {
     pub fn read(&self, addr: u16) -> u8 {
         match addr {
             0x4020..=0x5fff => self.expansion[addr as usize - 0x4020],
-            0x6000..=0x7fff => self.rpg_ram[addr as usize - 0x6000],
-            0x8000..=0xffff => self.mapper.read_rpg(self.rpg_rom.as_ref(), addr),
+            0x6000..=0x7fff => self.prg_ram[addr as usize - 0x6000],
+            0x8000..=0xffff => self.mapper.read_prg(self.prg_rom.as_ref(), addr),
             _ => unreachable!(),
         }
     }
@@ -120,8 +120,8 @@ impl Cartridge {
     pub fn write(&mut self, addr: u16, data: u8) {
         match addr {
             0x4020..=0x5fff => self.expansion[addr as usize - 0x4020] = data,
-            0x6000..=0x7fff => self.rpg_ram[addr as usize - 0x6000] = data,
-            0x8000..=0xffff => self.mapper.write_rpg(self.rpg_rom.as_mut(), addr, data),
+            0x6000..=0x7fff => self.prg_ram[addr as usize - 0x6000] = data,
+            0x8000..=0xffff => self.mapper.write_prg(self.prg_rom.as_mut(), addr, data),
             _ => unreachable!(),
         }
     }
@@ -155,8 +155,8 @@ impl Cartridge {
 
 #[allow(unused_variables)]
 pub trait Mapper {
-    fn read_rpg(&self, rpg: &[u8], addr: u16) -> u8;
-    fn write_rpg(&mut self, rpg: &mut [u8], addr: u16, data: u8) {}
+    fn read_prg(&self, prg: &[u8], addr: u16) -> u8;
+    fn write_prg(&mut self, prg: &mut [u8], addr: u16, data: u8) {}
 
     fn read_chr(&self, chr: &[u8], addr: u16) -> u8;
     fn write_chr(&mut self, chr: &mut [u8], addr: u16, data: u8) {
@@ -174,7 +174,7 @@ pub trait Mapper {
 struct NullMapper;
 
 impl Mapper for NullMapper {
-    fn read_rpg(&self, _: &[u8], addr: u16) -> u8 {
+    fn read_prg(&self, _: &[u8], addr: u16) -> u8 {
         // an infinite loop program
         match addr {
             0xfffc => 0x00,

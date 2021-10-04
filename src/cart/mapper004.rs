@@ -107,14 +107,14 @@ impl Mapper004 {
 }
 
 impl super::Mapper for Mapper004 {
-    fn read_rpg(&self, rpg: &[u8], addr: u16) -> u8 {
+    fn read_prg(&self, prg: &[u8], addr: u16) -> u8 {
         // 4 * 8KB prg banks
         let index = (addr >> 13) as usize & 0b11;
         let offset = addr as usize & 0x1fff;
-        rpg[offset + self.prg_banks[index] * 0x2000]
+        prg[offset + self.prg_banks[index] * 0x2000]
     }
 
-    fn write_rpg(&mut self, _rpg: &mut [u8], addr: u16, data: u8) {
+    fn write_prg(&mut self, _prg: &mut [u8], addr: u16, data: u8) {
         match addr {
             0x8000..=0x9fff => self.bank_select(addr, data),
             0xa000..=0xbfff => {

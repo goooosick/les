@@ -101,15 +101,15 @@ impl Mapper001 {
 }
 
 impl super::Mapper for Mapper001 {
-    fn read_rpg(&self, rpg: &[u8], addr: u16) -> u8 {
+    fn read_prg(&self, prg: &[u8], addr: u16) -> u8 {
         match addr {
-            0x8000..=0xbfff => rpg[addr as usize - 0x8000 + self.prg_bank0 * 0x4000],
-            0xc000..=0xffff => rpg[addr as usize - 0xc000 + self.prg_bank1 * 0x4000],
+            0x8000..=0xbfff => prg[addr as usize - 0x8000 + self.prg_bank0 * 0x4000],
+            0xc000..=0xffff => prg[addr as usize - 0xc000 + self.prg_bank1 * 0x4000],
             _ => unreachable!(),
         }
     }
 
-    fn write_rpg(&mut self, _rpg: &mut [u8], addr: u16, data: u8) {
+    fn write_prg(&mut self, _prg: &mut [u8], addr: u16, data: u8) {
         if data.get_bit(7) {
             self.step = 0;
             self.shifter = 0;

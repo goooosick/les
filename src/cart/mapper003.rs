@@ -2,10 +2,10 @@ use super::Mirroring;
 
 /// 003, CNROM
 ///
-/// 16 KB or 32KB RPG,
+/// 16 KB or 32KB PRG,
 /// 8 KB switchable CHR banks (up to 256)
 pub struct Mapper003 {
-    rpg_bank1: usize,
+    prg_bank1: usize,
     chr_bank: usize,
     chr_banks: usize,
 
@@ -13,16 +13,16 @@ pub struct Mapper003 {
 }
 
 impl Mapper003 {
-    pub fn new(mirroring: Mirroring, rpg_banks: usize, chr_banks: usize) -> Self {
+    pub fn new(mirroring: Mirroring, prg_banks: usize, chr_banks: usize) -> Self {
         assert!(
-            (rpg_banks == 1 || rpg_banks == 2) && chr_banks <= 256,
-            "invalid banks for Mapper003, rpg: {}, chr: {}",
-            rpg_banks,
+            (prg_banks == 1 || prg_banks == 2) && chr_banks <= 256,
+            "invalid banks for Mapper003, prg: {}, chr: {}",
+            prg_banks,
             chr_banks
         );
 
         Self {
-            rpg_bank1: rpg_banks - 1,
+            prg_bank1: prg_banks - 1,
             chr_bank: 0,
             chr_banks,
 
@@ -32,15 +32,15 @@ impl Mapper003 {
 }
 
 impl super::Mapper for Mapper003 {
-    fn read_rpg(&self, rpg: &[u8], addr: u16) -> u8 {
+    fn read_prg(&self, prg: &[u8], addr: u16) -> u8 {
         match addr {
-            0x8000..=0xbfff => rpg[addr as usize - 0x8000],
-            0xc000..=0xffff => rpg[addr as usize - 0xc000 + self.rpg_bank1 * 0x4000],
+            0x8000..=0xbfff => prg[addr as usize - 0x8000],
+            0xc000..=0xffff => prg[addr as usize - 0xc000 + self.prg_bank1 * 0x4000],
             _ => unreachable!(),
         }
     }
 
-    fn write_rpg(&mut self, _rpg: &mut [u8], addr: u16, data: u8) {
+    fn write_prg(&mut self, _prg: &mut [u8], addr: u16, data: u8) {
         match addr {
             0x8000..=0xffff => self.chr_bank = data as usize % self.chr_banks,
             _ => unreachable!(),
