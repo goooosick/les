@@ -9,6 +9,7 @@ mod mapper004;
 
 const EXPANSION_ROM_SIZE: usize = 0x1fe0;
 const RPG_RAM_SIZE: usize = 0x2000;
+const CHR_RAM_SIZE: usize = 0x2000;
 
 const MIRRORING_MAP: [[usize; 4]; 5] = [
     [0x000, 0x000, 0x400, 0x400], // Horizontal
@@ -32,6 +33,7 @@ pub struct Cartridge {
     expansion: Box<[u8; EXPANSION_ROM_SIZE]>,
     rpg_ram: Box<[u8; RPG_RAM_SIZE]>,
     rpg_rom: Vec<u8>,
+    chr_ram: Box<[u8; CHR_RAM_SIZE]>,
     chr_rom: Vec<u8>,
 
     mapper: Box<dyn Mapper + Send>,
@@ -43,6 +45,7 @@ impl Cartridge {
             expansion: Box::new([0u8; EXPANSION_ROM_SIZE]),
             rpg_ram: Box::new([0u8; RPG_RAM_SIZE]),
             rpg_rom: Vec::new(),
+            chr_ram: Box::new([0u8; CHR_RAM_SIZE]),
             chr_rom: Vec::new(),
 
             mapper: Box::new(NullMapper),
@@ -76,22 +79,22 @@ impl Cartridge {
         let rpg_rom = data[offset..][..(rpg_banks * 0x4000)].to_vec();
 
         let offset = offset + rpg_rom.len();
-        let raw_chr_banks = data[5] as usize;
-        let chr_len = raw_chr_banks * 0x2000;
+        let chr_banks = data[5] as usize;
+        let chr_len = chr_banks * 0x2000;
 
-        let chr_banks = raw_chr_banks.max(1);
         let mut chr_rom = vec![0u8; chr_banks * 0x2000];
         chr_rom[..chr_len].copy_from_slice(&data[offset..][..chr_len]);
 
         println!("MAPPER: {:03}", mapper_type);
         println!("RPG ROM: {} * 16KB", rpg_banks);
-        println!("CHR ROM: {} * 8KB", raw_chr_banks);
+        println!("CHR ROM: {} * 8KB", chr_banks);
         println!("MIRRORING: {:?}", mirroring);
 
         Some(Self {
             expansion: Box::new([0u8; EXPANSION_ROM_SIZE]),
             rpg_ram: Box::new([0u8; RPG_RAM_SIZE]),
             rpg_rom,
+            chr_ram: Box::new([0u8; CHR_RAM_SIZE]),
             chr_rom,
 
             mapper: match mapper_type {
@@ -124,11 +127,15 @@ impl Cartridge {
     }
 
     pub fn read_chr(&self, addr: u16) -> u8 {
-        self.mapper.read_chr(self.chr_rom.as_ref(), addr)
+        if self.chr_rom.len() > 0 {
+            self.mapper.read_chr(self.chr_rom.as_ref(), addr)
+        } else {
+            self.chr_ram[addr as usize]
+        }
     }
 
     pub fn write_chr(&mut self, addr: u16, data: u8) {
-        self.mapper.write_chr(self.chr_rom.as_mut(), addr, data)
+        self.mapper.write_chr(self.chr_ram.as_mut(), addr, data)
     }
 
     pub fn nm_addr(&self, addr: u16) -> usize {
@@ -152,7 +159,9 @@ pub trait Mapper {
     fn write_rpg(&mut self, rpg: &mut [u8], addr: u16, data: u8) {}
 
     fn read_chr(&self, chr: &[u8], addr: u16) -> u8;
-    fn write_chr(&mut self, chr: &mut [u8], addr: u16, data: u8) {}
+    fn write_chr(&mut self, chr: &mut [u8], addr: u16, data: u8) {
+        chr[addr as usize] = data;
+    }
 
     fn update_scanline(&mut self) {}
     fn poll_irq(&mut self) -> bool {

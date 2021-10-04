@@ -138,12 +138,6 @@ impl super::Mapper for Mapper001 {
         }
     }
 
-    fn write_chr(&mut self, chr: &mut [u8], addr: u16, data: u8) {
-        if self.enable_ram {
-            chr[addr as usize] = data;
-        }
-    }
-
     fn mirroring(&self) -> Mirroring {
         self.mirroring
     }

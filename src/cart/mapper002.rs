@@ -49,10 +49,6 @@ impl super::Mapper for Mapper002 {
         chr[addr as usize]
     }
 
-    fn write_chr(&mut self, chr: &mut [u8], addr: u16, data: u8) {
-        chr[addr as usize] = data;
-    }
-
     fn mirroring(&self) -> Mirroring {
         self.mirroring
     }

@@ -150,10 +150,6 @@ impl super::Mapper for Mapper004 {
         chr[offset + self.chr_banks[index] * 0x400]
     }
 
-    fn write_chr(&mut self, chr: &mut [u8], addr: u16, data: u8) {
-        chr[addr as usize] = data;
-    }
-
     fn update_scanline(&mut self) {
         if self.irq_counter == 0 {
             self.irq_counter = self.irq_latch;
