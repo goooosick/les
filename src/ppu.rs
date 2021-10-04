@@ -1,5 +1,5 @@
 use self::regs::*;
-use crate::cart::{Cartridge, Mirroring};
+use crate::cart::Cartridge;
 use bit_field::BitField;
 use std::{cell::Cell, ops::IndexMut};
 
@@ -140,15 +140,17 @@ impl Ppu {
     fn update(&mut self, cart: &Cartridge) {
         // on visible scanlines, output pixels
         if (0..240).contains(&self.line) && (1..257).contains(&self.dot) {
-            let (mut bg_tile, mut bg_color) = (0, 0);
-            let (mut sp_tile, mut sp_color) = (0, 0);
+            let (mut bg_tile, mut bg_pal_index) = (0, 0);
+            let (mut sp_tile, mut sp_pal_index) = (0, 0);
             let mut sp_priority = 0;
             let mut sp_zero = false;
 
             if self.mask.show_bg() {
                 let bg_pal = self.rs.attr_bits.get(self.x);
                 bg_tile = self.rs.tile_bits.get(self.x);
-                bg_color = self.read_vram(cart, 0x3f00 + bg_pal * 4 + bg_tile);
+
+                let clip_left = !self.mask.show_bg_left() && self.dot < 8;
+                bg_pal_index = bg_pal * 4 + bg_tile * (!clip_left as u16);
             }
 
             if self.mask.show_sp() {
@@ -158,8 +160,10 @@ impl Ppu {
                         let tile = sp.tile_bits.get(0);
                         if tile != 0 {
                             sp_tile = tile;
-                            sp_color = self.read_vram(cart, 0x3f10 + sp_pal * 4 + sp_tile);
                             sp_priority = sp.priority;
+
+                            let clip_left = !self.mask.show_sp_left() && self.dot < 8;
+                            sp_pal_index = sp_pal * 4 + sp_tile * (!clip_left as u16);
 
                             if sp.is_sp_zero {
                                 sp_zero = true;
@@ -174,6 +178,9 @@ impl Ppu {
             if sp_zero && bg_tile != 0 && sp_tile != 0 {
                 self.status.set_sp0_hit(true);
             }
+
+            let bg_color = self.read_vram(cart, 0x3f00 + bg_pal_index);
+            let sp_color = self.read_vram(cart, 0x3f10 + sp_pal_index);
 
             let pal_index = match (bg_tile != 0, sp_tile != 0, sp_priority) {
                 (false, true, _) => sp_color,
@@ -297,16 +304,16 @@ impl Ppu {
             if (self.dot - 257) % 8 == 7 {
                 let sp_n = (self.dot - 257) / 8;
 
-                let addr = sp_n * 4;
-                let sp_y = self.line as u16 - self.rs.sec_oam[addr + 0] as u16;
-                let index = self.rs.sec_oam[addr + 1] as u16;
-                let attr = self.rs.sec_oam[addr + 2];
-                let sp_x = self.rs.sec_oam[addr + 3];
-
-                self.rs.sprites[sp_n].x = sp_x;
-                self.rs.sprites[sp_n].is_sp_zero = sp_n == 0 && self.rs.sp_zero;
-
                 if sp_n < self.rs.sp_count {
+                    let addr = sp_n * 4;
+                    let sp_y = self.line as u16 - self.rs.sec_oam[addr + 0] as u16;
+                    let index = self.rs.sec_oam[addr + 1] as u16;
+                    let attr = self.rs.sec_oam[addr + 2];
+                    let sp_x = self.rs.sec_oam[addr + 3];
+
+                    self.rs.sprites[sp_n].x = sp_x;
+                    self.rs.sprites[sp_n].is_sp_zero = sp_n == 0 && self.rs.sp_zero;
+
                     // 76543210
                     // ||||||||
                     // ||||||++- palette of sprite
@@ -459,10 +466,16 @@ impl Ppu {
             0x0000..=0x1fff => cart.read_chr(addr),
             0x2000..=0x3eff => self.nametables[cart.nm_addr(addr)],
             0x3f00..=0x3fff => {
-                let addr = (addr & 0x1f) as usize;
-                match addr {
-                    0x04 | 0x08 | 0x0c => self.palettes[0x00],
-                    _ => self.palettes[addr],
+                let pal_hack = !(self.mask.show_bg() || self.mask.show_sp())
+                    && (0x3f00..=0x3fff).contains(&self.v.addr());
+                if pal_hack {
+                    self.palettes[self.v.addr() as usize & 0x1f]
+                } else {
+                    let addr = (addr & 0x1f) as usize;
+                    match addr {
+                        _a if addr % 4 == 0 => self.palettes[0x00],
+                        _ => self.palettes[addr],
+                    }
                 }
             }
             _ => unreachable!(),
@@ -478,7 +491,7 @@ impl Ppu {
                 let data = data & 0x3f;
                 let addr = (addr & 0x1f) as usize;
                 match addr {
-                    0x00 | 0x04 | 0x08 | 0x0c | 0x10 | 0x14 | 0x18 | 0x1c => {
+                    _a if addr % 4 == 0 => {
                         self.palettes[addr & 0x0f + 0x00] = data;
                         self.palettes[addr & 0x0f + 0x10] = data;
                     }

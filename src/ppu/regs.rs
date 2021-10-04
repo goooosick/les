@@ -93,25 +93,6 @@ impl PpuMask {
 pub struct PpuStatus(Cell<u8>);
 
 impl PpuStatus {
-    /// sprite overflow
-    pub fn sp_overflow(&self) -> bool {
-        self.0.get().get_bit(5)
-    }
-
-    /// sprite 0 hit
-    pub fn sp0_hit(&self) -> bool {
-        self.0.get().get_bit(6)
-    }
-
-    /// vblank
-    pub fn vblank(&self) -> bool {
-        self.0.get().get_bit(7)
-    }
-
-    pub fn set_lb(&self, b: u8) {
-        self.0.set((self.0.get() & 0b1110_0000) | (b & 0b0001_1111));
-    }
-
     pub fn set_sp_overflow(&self, b: bool) {
         self.0.set(*self.0.get().set_bit(5, b));
     }
