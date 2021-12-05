@@ -51,7 +51,7 @@ impl PpuMask {
     }
 
     /// gray scale display
-    pub fn gray_scale(&self) -> bool {
+    pub fn _gray_scale(&self) -> bool {
         self.0.get_bit(0)
     }
 
@@ -75,15 +75,15 @@ impl PpuMask {
         self.0.get_bit(4)
     }
 
-    pub fn tint_red(&self) -> bool {
+    pub fn _tint_red(&self) -> bool {
         self.0.get_bit(5)
     }
 
-    pub fn tint_green(&self) -> bool {
+    pub fn _tint_green(&self) -> bool {
         self.0.get_bit(6)
     }
 
-    pub fn tint_blue(&self) -> bool {
+    pub fn _tint_blue(&self) -> bool {
         self.0.get_bit(7)
     }
 }
