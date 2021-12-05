@@ -373,6 +373,10 @@ impl Ppu {
         (self.line, self.dot)
     }
 
+    pub fn frame_count(&self) -> usize {
+        self.frames
+    }
+
     pub fn display_buf(&self) -> &[u8] {
         self.rs.back_buf.as_ref()
     }
