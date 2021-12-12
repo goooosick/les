@@ -371,7 +371,7 @@ fn collect_inputs(
 
 fn load_rom_event(emu: Res<SharedEmuContext>, mut events: EventReader<SelectFile>) {
     for file in events.iter() {
-        if let Some(cart) = Cartridge::load(file.0.as_path()) {
+        if let Some(cart) = Cartridge::load(file.0.as_ref()) {
             let mut emu = emu.lock().unwrap();
             let EmuContext { cpu, bus, .. } = &mut *emu;
 

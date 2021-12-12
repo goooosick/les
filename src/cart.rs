@@ -1,5 +1,4 @@
 use bit_field::BitField;
-use std::path::Path;
 
 mod mapper000;
 mod mapper001;
@@ -36,7 +35,7 @@ pub struct Cartridge {
     chr_ram: Box<[u8; CHR_RAM_SIZE]>,
     chr_rom: Vec<u8>,
 
-    mapper: Box<dyn Mapper + Send>,
+    mapper: Box<dyn Mapper + Send + Sync>,
 }
 
 impl Cartridge {
@@ -52,8 +51,7 @@ impl Cartridge {
         }
     }
 
-    pub fn load(file: impl AsRef<Path>) -> Option<Self> {
-        let data = std::fs::read(file).ok()?;
+    pub fn load(data: &[u8]) -> Option<Self> {
         if data[..4] != [b'N', b'E', b'S', 0x1a] {
             return None;
         }
