@@ -2,15 +2,15 @@ use super::{pick_file::*, EmuContext, SharedEmuContext};
 use bevy::prelude::*;
 use bevy_egui::{
     egui::{self, TextureId},
-    EguiContext, EguiPlugin,
+    EguiContext,
 };
 use les::{cpu::CpuStatus, Cartridge, InputStates};
 
 pub struct UiPlugin;
 
 impl Plugin for UiPlugin {
-    fn build(&self, app: &mut AppBuilder) {
-        app.add_plugin(EguiPlugin)
+    fn build(&self, app: &mut App) {
+        app.add_plugin(bevy_egui::EguiPlugin)
             .insert_resource(UiData {
                 scale: 2,
                 debug_scales: [1.0; 4],
@@ -18,11 +18,11 @@ impl Plugin for UiPlugin {
                 ..Default::default()
             })
             .init_resource::<Option<Gamepad>>()
-            .add_startup_system(alloc_textures.system())
-            .add_system(ui.system())
-            .add_system(load_rom_event.system())
-            .add_system(gamepad_connection.system())
-            .add_system(update.system());
+            .add_startup_system(alloc_textures)
+            .add_system(ui)
+            .add_system(load_rom_event)
+            .add_system(gamepad_connection)
+            .add_system(update);
     }
 }
 
@@ -30,7 +30,7 @@ struct PpuTexture {
     id: TextureId,
     size: egui::Vec2,
     name: &'static str,
-    handle: Handle<Texture>,
+    handle: Handle<Image>,
 }
 
 type PpuTextures = Vec<PpuTexture>;
@@ -70,15 +70,15 @@ fn ui(
 
     egui::TopBottomPanel::top("").show(ctx, |ui| {
         menu::bar(ui, |ui| {
-            menu::menu(ui, "File", |ui| {
+            ui.menu_button("File", |ui| {
                 if ui.button("open").clicked() {
                     file_events.send(RequestFile);
                 }
             });
-            menu::menu(ui, "Debug", |ui| {
+            ui.menu_button("Debug", |ui| {
                 ui.checkbox(&mut ui_data.debug, "debug_windows");
             });
-            menu::menu(ui, "Layout", |ui| {
+            ui.menu_button("Layout", |ui| {
                 if ui.button("reset").clicked() {
                     ctx.memory().reset_areas();
                 }
@@ -120,7 +120,7 @@ fn ui(
                 ui.vertical(|ui| {
                     for (value, name) in apu_ctrl
                         .iter_mut()
-                        .zip(["Pulse1", "Pulse2", "Triangle", "Noise", "DMC"].iter())
+                        .zip(["Pulse1", "Pulse2", "Triangle", "Noise", "DMC"].into_iter())
                     {
                         ui.checkbox(value, name);
                     }
@@ -172,12 +172,12 @@ fn ui(
 
 fn alloc_textures(
     mut command: Commands,
-    mut assets: ResMut<Assets<Texture>>,
+    mut assets: ResMut<Assets<Image>>,
     mut egui_context: ResMut<EguiContext>,
 ) {
-    use bevy::render::texture::{Extent3d, TextureDimension, TextureFormat};
+    use bevy::render::render_resource::{Extent3d, TextureDimension, TextureFormat};
 
-    const TEXTURE_INFOS: [((usize, usize), &'static str); 5] = [
+    const TEXTURE_INFOS: [((usize, usize), &str); 5] = [
         ((256, 240), ""),
         ((256, 128), "Pattern"),
         ((256, 240), "Nametable"),
@@ -185,14 +185,14 @@ fn alloc_textures(
         ((256, 16), "Sprites"),
     ];
 
-    let mut textures = vec![];
+    let mut images = vec![];
 
     for (i, (size, name)) in TEXTURE_INFOS.into_iter().enumerate() {
-        let handle = assets.add(Texture::new(
+        let handle = assets.add(Image::new(
             Extent3d {
                 width: size.0 as _,
                 height: size.1 as _,
-                depth: 1,
+                depth_or_array_layers: 1,
             },
             TextureDimension::D2,
             vec![0u8; size.0 * size.1 * 4],
@@ -200,7 +200,7 @@ fn alloc_textures(
         ));
 
         egui_context.set_egui_texture(i as _, handle.as_weak());
-        textures.push(PpuTexture {
+        images.push(PpuTexture {
             id: egui::TextureId::User(i as _),
             size: (size.0 as f32, size.1 as f32).into(),
             name,
@@ -208,14 +208,14 @@ fn alloc_textures(
         });
     }
 
-    command.insert_resource(textures);
+    command.insert_resource(images);
 }
 
 fn update(
     input: Res<Input<KeyCode>>,
     gamepad: Res<Option<Gamepad>>,
     button_inputs: Res<Input<GamepadButton>>,
-    mut textures: ResMut<Assets<Texture>>,
+    mut textures: ResMut<Assets<Image>>,
     infos: Res<PpuTextures>,
     emu: Res<SharedEmuContext>,
     mut ui_data: ResMut<UiData>,
@@ -323,7 +323,7 @@ fn gamepad_connection(
                 }
             }
             GamepadEvent(g, GamepadEventType::Disconnected) => {
-                if gamepad.as_ref() == Some(g) {
+                if (*gamepad).as_ref() == Some(g) {
                     gamepad.take();
                 }
             }

@@ -5,12 +5,12 @@ use rfd::AsyncFileDialog;
 pub struct PickFilePlugin;
 
 impl Plugin for PickFilePlugin {
-    fn build(&self, app: &mut AppBuilder) {
+    fn build(&self, app: &mut App) {
         app.add_event::<RequestFile>()
             .add_event::<SelectFile>()
-            .add_startup_system(init_chan.system())
-            .add_system(open_dialog.system())
-            .add_system(poll_files.system());
+            .add_startup_system(init_chan)
+            .add_system(open_dialog)
+            .add_system(poll_files);
     }
 }
 
@@ -41,7 +41,6 @@ fn open_dialog(
                 }
             })
             .detach();
-        break;
     }
 }
 
