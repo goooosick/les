@@ -1,0 +1,52 @@
+name: deploy-wasm
+
+on:
+  push:
+    branches: [master]
+
+env:
+  CARGO_TERM_COLOR: always
+
+jobs:
+  deploy-wasm:
+    name: deploy wasm
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@v2
+      - uses: actions-rs/toolchain@v1
+        with:
+          toolchain: stable
+          target: wasm32-unknown-unknown
+          override: true
+      - uses: jetli/wasm-bindgen-action@v0.1.0
+
+      - name: cache env
+        uses: actions/cache@v2
+        with:
+          path: |
+            ~/.cargo/registry
+            ~/.cargo/git
+            target
+          key: ${{ runner.os }}-cargo-${{ hashFiles('**/Cargo.toml') }}
+
+      - name: build bin
+        run: cargo build --release --target wasm32-unknown-unknown --no-default-features
+
+      - name: build wasm
+        run: wasm-bindgen --target web --out-dir wasm_dist  target/wasm32-unknown-unknown/release/les_bevy.wasm
+
+      - name: checkout web
+        uses: actions/checkout@v2
+        with:
+          ref: web
+          clean: false
+
+      - name: commit
+        run: |
+          git config --local user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git config --local user.name "github-actions[bot]"
+          mkdir -p pkg && mv wasm_dist/* pkg/
+          git add -f pkg
+          git commit -m "deploy wasm"
+          git push -f origin web
