@@ -16,6 +16,9 @@ struct EmuContext {
 type SharedEmuContext = Arc<Mutex<EmuContext>>;
 
 fn main() {
+    #[cfg(target_arch = "wasm32")]
+    console_error_panic_hook::set_once();
+
     let emu = {
         let mut bus = Bus::new(Cartridge::empty());
         let mut cpu = Cpu::default();
@@ -39,14 +42,15 @@ fn main() {
             vsync: true,
             ..Default::default()
         })
+        .add_plugin(bevy::log::LogPlugin::default())
         .add_plugin(bevy::core::CorePlugin::default())
         .add_plugin(bevy::input::InputPlugin::default())
         .add_plugin(bevy::window::WindowPlugin::default())
         .add_plugin(bevy::asset::AssetPlugin::default())
+        .add_plugin(bevy::winit::WinitPlugin::default())
         .add_plugin(bevy::render::RenderPlugin::default())
         .add_plugin(bevy::core_pipeline::CorePipelinePlugin::default())
         .add_plugin(bevy::gilrs::GilrsPlugin::default())
-        .add_plugin(bevy::winit::WinitPlugin::default())
         .add_plugin(ui::UiPlugin)
         .add_plugin(pick_file::PickFilePlugin)
         .run();
