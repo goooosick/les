@@ -30,11 +30,8 @@ jobs:
             target
           key: ${{ runner.os }}-cargo-${{ hashFiles('**/Cargo.toml') }}
 
-      - name: build bin
-        run: cargo build --release --target wasm32-unknown-unknown --no-default-features
-
       - name: build wasm
-        run: wasm-bindgen --target web --out-dir wasm_dist  target/wasm32-unknown-unknown/release/les_bevy.wasm
+        run: sh scripts/build_web.sh
 
       - name: checkout web
         uses: actions/checkout@v2
@@ -46,7 +43,7 @@ jobs:
         run: |
           git config --local user.email "41898282+github-actions[bot]@users.noreply.github.com"
           git config --local user.name "github-actions[bot]"
-          mkdir -p pkg && mv wasm_dist/* pkg/
-          git add -f pkg
+          cp -rf web/* . -v
+          git add -u && git add -f pkg
           git commit -m "deploy wasm"
           git push -f origin web
