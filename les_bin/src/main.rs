@@ -1,6 +1,6 @@
 use bevy::prelude::*;
 use cpal::traits::{DeviceTrait, HostTrait, StreamTrait};
-use les::{Bus, Cartridge, Cpu};
+use les_nes::{Bus, Cartridge, Cpu};
 use std::sync::{Arc, Mutex};
 
 mod pick_file;
@@ -83,7 +83,7 @@ where
     let sample_rate = config.sample_rate.0 as f32;
     let channels = config.channels as usize;
 
-    let sample_step = les::CPU_FREQUENCY / sample_rate;
+    let sample_step = les_nes::CPU_FREQUENCY / sample_rate;
     let mut sample_delta = sample_step;
 
     device

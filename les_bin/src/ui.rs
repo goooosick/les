@@ -4,7 +4,7 @@ use bevy_egui::{
     egui::{self, TextureId},
     EguiContext,
 };
-use les::{cpu::CpuStatus, Cartridge, InputStates};
+use les_nes::{cpu::CpuStatus, Cartridge, InputStates};
 
 pub struct UiPlugin;
 
@@ -338,7 +338,7 @@ fn collect_inputs(
     button_inputs: &Res<Input<GamepadButton>>,
     swap: bool,
 ) -> (InputStates, InputStates) {
-    let input0 = les::InputStates {
+    let input0 = les_nes::InputStates {
         a: input.pressed(KeyCode::Z),
         b: input.pressed(KeyCode::X),
         select: input.pressed(KeyCode::C),
@@ -350,7 +350,7 @@ fn collect_inputs(
     };
     let input1 = {
         let bis = button_inputs;
-        gamepad.map_or(Default::default(), |g| les::InputStates {
+        gamepad.map_or(Default::default(), |g| les_nes::InputStates {
             a: bis.pressed(GamepadButton(g, GamepadButtonType::South)),
             b: bis.pressed(GamepadButton(g, GamepadButtonType::East)),
             select: bis.pressed(GamepadButton(g, GamepadButtonType::Select)),
