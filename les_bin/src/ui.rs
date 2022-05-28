@@ -1,5 +1,8 @@
 use super::{pick_file::*, EmuContext, SharedEmuContext};
-use bevy::prelude::*;
+use bevy::{
+    diagnostic::{Diagnostics, FrameTimeDiagnosticsPlugin},
+    prelude::*,
+};
 use bevy_egui::{
     egui::{self, TextureId},
     EguiContext,
@@ -62,6 +65,7 @@ fn ui(
     egui_context: ResMut<EguiContext>,
     infos: Res<PpuTextures>,
     mut ui_data: ResMut<UiData>,
+    diagnostics: Res<Diagnostics>,
     mut file_events: EventWriter<RequestFile>,
 ) {
     use egui::{menu, Slider};
@@ -161,12 +165,20 @@ fn ui(
             });
         }
 
-        egui::Window::new("les")
-            .collapsible(false)
-            .resizable(false)
-            .show(ctx, |ui| {
-                ui.image(infos[0].id, infos[0].size * ui_data.scale as f32);
-            });
+        egui::Window::new(format!(
+            "les-{:3.02}",
+            diagnostics
+                .get(FrameTimeDiagnosticsPlugin::FPS)
+                .unwrap()
+                .average()
+                .unwrap_or_default()
+        ))
+        .id(egui::Id::new("window"))
+        .collapsible(false)
+        .resizable(false)
+        .show(ctx, |ui| {
+            ui.image(infos[0].id, infos[0].size * ui_data.scale as f32);
+        });
     });
 }
 
