@@ -1,3 +1,5 @@
+#![allow(clippy::identity_op)]
+
 pub mod apu;
 pub mod bus;
 pub mod cart;

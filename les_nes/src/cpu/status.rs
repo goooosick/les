@@ -15,7 +15,7 @@ impl Status {
         self.n = (a & 0x80) != 0;
     }
 
-    pub fn to_u8(&self) -> u8 {
+    pub fn to_u8(self) -> u8 {
         0b0010_0000
             | ((self.n as u8) << 7)
             | ((self.v as u8) << 6)

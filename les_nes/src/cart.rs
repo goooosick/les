@@ -125,7 +125,7 @@ impl Cartridge {
     }
 
     pub fn read_chr(&self, addr: u16) -> u8 {
-        if self.chr_rom.len() > 0 {
+        if !self.chr_rom.is_empty() {
             self.mapper.read_chr(self.chr_rom.as_ref(), addr)
         } else {
             self.chr_ram[addr as usize]

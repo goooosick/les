@@ -67,8 +67,8 @@ pub struct Ppu {
     rs: RenderState,
 }
 
-impl Ppu {
-    pub fn new() -> Self {
+impl Default for Ppu {
+    fn default() -> Self {
         Self {
             nametables: Box::new([0u8; NAMETABLE_SIZE]),
             palettes: Box::new([0u8; PALETTES_SIZE]),
@@ -91,14 +91,17 @@ impl Ppu {
             rs: Default::default(),
         }
     }
+}
 
+impl Ppu {
     pub fn tick(&mut self, cart: &mut Cartridge) {
         self.update(cart);
 
-        if self.mask.show_bg() || self.mask.show_sp() {
-            if self.dot == 324 && (self.line < 240 || self.line == 261) {
-                cart.update_scanline();
-            }
+        if (self.mask.show_bg() || self.mask.show_sp())
+            && self.dot == 324
+            && (self.line < 240 || self.line == 261)
+        {
+            cart.update_scanline();
         }
 
         if self.line == 241 && self.dot == 1 {
@@ -118,10 +121,8 @@ impl Ppu {
             }
 
             // skip one dot on odd frame
-            if self.dot == 339 {
-                if self.mask.show_bg() && (self.frames % 2 != 0) {
-                    self.dot = 340;
-                }
+            if self.dot == 339 && self.mask.show_bg() && (self.frames % 2 != 0) {
+                self.dot = 340;
             }
         }
 
@@ -274,80 +275,76 @@ impl Ppu {
         }
 
         // sprite evaluation
-        if (65..257).contains(&self.dot) && self.line != 261 {
-            if self.rs.sp_n < 64 {
-                let addr0 = self.rs.sp_n * 4;
-                let y = self.oam[addr0] as usize;
-                if (y..(y + self.ctrl.sp_size())).contains(&self.line) {
-                    if self.rs.sp_count < 8 {
-                        let addr1 = self.rs.sp_count * 4;
-                        self.rs.sec_oam[addr1 + 0] = self.oam[addr0 + 0];
-                        self.rs.sec_oam[addr1 + 1] = self.oam[addr0 + 1];
-                        self.rs.sec_oam[addr1 + 2] = self.oam[addr0 + 2];
-                        self.rs.sec_oam[addr1 + 3] = self.oam[addr0 + 3];
+        if (65..257).contains(&self.dot) && self.line != 261 && self.rs.sp_n < 64 {
+            let addr0 = self.rs.sp_n * 4;
+            let y = self.oam[addr0] as usize;
+            if (y..(y + self.ctrl.sp_size())).contains(&self.line) {
+                if self.rs.sp_count < 8 {
+                    let addr1 = self.rs.sp_count * 4;
+                    self.rs.sec_oam[addr1 + 0] = self.oam[addr0 + 0];
+                    self.rs.sec_oam[addr1 + 1] = self.oam[addr0 + 1];
+                    self.rs.sec_oam[addr1 + 2] = self.oam[addr0 + 2];
+                    self.rs.sec_oam[addr1 + 3] = self.oam[addr0 + 3];
 
-                        self.rs.sp_count += 1;
-                        if self.rs.sp_n == 0 {
-                            self.rs.sp_zero = true;
-                        }
-                    } else {
-                        self.status.set_sp_overflow(true);
+                    self.rs.sp_count += 1;
+                    if self.rs.sp_n == 0 {
+                        self.rs.sp_zero = true;
                     }
+                } else {
+                    self.status.set_sp_overflow(true);
                 }
-
-                self.rs.sp_n += 1;
             }
+
+            self.rs.sp_n += 1;
         }
 
         // fetch sprite data
-        if (257..321).contains(&self.dot) {
-            if (self.dot - 257) % 8 == 7 {
-                let sp_n = (self.dot - 257) / 8;
+        if (257..321).contains(&self.dot) && (self.dot - 257) % 8 == 7 {
+            let sp_n = (self.dot - 257) / 8;
 
-                if sp_n < self.rs.sp_count {
-                    let addr = sp_n * 4;
-                    let sp_y = self.line as u16 - self.rs.sec_oam[addr + 0] as u16;
-                    let index = self.rs.sec_oam[addr + 1] as u16;
-                    let attr = self.rs.sec_oam[addr + 2];
-                    let sp_x = self.rs.sec_oam[addr + 3];
+            if sp_n < self.rs.sp_count {
+                let addr = sp_n * 4;
+                let sp_y = self.line as u16 - self.rs.sec_oam[addr + 0] as u16;
+                let index = self.rs.sec_oam[addr + 1] as u16;
+                let attr = self.rs.sec_oam[addr + 2];
+                let sp_x = self.rs.sec_oam[addr + 3];
 
-                    self.rs.sprites[sp_n].x = sp_x;
-                    self.rs.sprites[sp_n].is_sp_zero = sp_n == 0 && self.rs.sp_zero;
+                self.rs.sprites[sp_n].x = sp_x;
+                self.rs.sprites[sp_n].is_sp_zero = sp_n == 0 && self.rs.sp_zero;
 
-                    // 76543210
-                    // ||||||||
-                    // ||||||++- palette of sprite
-                    // |||+++--- unimplemented
-                    // ||+------ priority (0: in front of background; 1: behind background)
-                    // |+------- flip sprite horizontally
-                    // +-------- flip sprite vertically
+                // 76543210
+                // ||||||||
+                // ||||||++- palette of sprite
+                // |||+++--- unimplemented
+                // ||+------ priority (0: in front of background; 1: behind background)
+                // |+------- flip sprite horizontally
+                // +-------- flip sprite vertically
 
-                    let (mut tile_b0, mut tile_b1, attr_b0, attr_b1) = {
-                        let tile_y = (sp_y & 0x07) ^ (attr.get_bit(7) as u16 * 0x07);
+                let (mut tile_b0, mut tile_b1, attr_b0, attr_b1) = {
+                    let tile_y = (sp_y & 0x07) ^ (attr.get_bit(7) as u16 * 0x07);
 
-                        let tile_addr = if self.ctrl.sp_size() == 8 {
-                            self.ctrl.sp_pattern_table() + index * 0x10
-                        } else {
-                            let tile_offset = ((sp_y >= 8) ^ attr.get_bit(7)) as u16;
-                            ((index & 0b01) * 0x1000) + ((index & 0xfe) + tile_offset) * 0x10
-                        };
-                        (
-                            self.read_vram(cart, tile_addr + tile_y),
-                            self.read_vram(cart, tile_addr + tile_y + 8),
-                            attr.get_bit(0) as u8 * 0xff,
-                            attr.get_bit(1) as u8 * 0xff,
-                        )
+                    let tile_addr = if self.ctrl.sp_size() == 8 {
+                        self.ctrl.sp_pattern_table() + index * 0x10
+                    } else {
+                        let tile_offset = ((sp_y >= 8) ^ attr.get_bit(7)) as u16;
+                        ((index & 0b01) * 0x1000) + ((index & 0xfe) + tile_offset) * 0x10
                     };
-                    if attr.get_bit(6) {
-                        tile_b0 = tile_b0.reverse_bits();
-                        tile_b1 = tile_b1.reverse_bits();
-                    }
-
-                    let sp = &mut self.rs.sprites[sp_n];
-                    sp.tile_bits.load(tile_b0, tile_b1);
-                    sp.attr_bits.load(attr_b0, attr_b1);
-                    sp.priority = attr.get_bit(5) as u8;
+                    (
+                        self.read_vram(cart, tile_addr + tile_y),
+                        self.read_vram(cart, tile_addr + tile_y + 8),
+                        attr.get_bit(0) as u8 * 0xff,
+                        attr.get_bit(1) as u8 * 0xff,
+                    )
+                };
+                if attr.get_bit(6) {
+                    tile_b0 = tile_b0.reverse_bits();
+                    tile_b1 = tile_b1.reverse_bits();
                 }
+
+                let sp = &mut self.rs.sprites[sp_n];
+                sp.tile_bits.load(tile_b0, tile_b1);
+                sp.attr_bits.load(attr_b0, attr_b1);
+                sp.priority = attr.get_bit(5) as u8;
             }
         }
     }
@@ -496,8 +493,8 @@ impl Ppu {
                 let addr = (addr & 0x1f) as usize;
                 match addr {
                     _a if addr % 4 == 0 => {
-                        self.palettes[addr & 0x0f + 0x00] = data;
-                        self.palettes[addr & 0x0f + 0x10] = data;
+                        self.palettes[(addr & 0x0f) + 0x00] = data;
+                        self.palettes[(addr & 0x0f) + 0x10] = data;
                     }
                     _ => self.palettes[addr] = data,
                 }

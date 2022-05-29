@@ -26,7 +26,7 @@ pub const OP_FUNCS: [Op; 256] = [
 ];
 
 #[rustfmt::skip]
-pub const OP_NAMES: [&'static str; 256] = [
+pub const OP_NAMES: [&str; 256] = [
 //   00     01     02     03     04     05     06     07     08     09     0a     0b     0c     0d     0e     0f
     "BRK", "ORA", "STP", "SLO", "NOP", "ORA", "ASL", "SLO", "PHP", "ORA", "ASL", "STP", "NOP", "ORA", "ASL", "SLO", // 00
     "BPL", "ORA", "STP", "SLO", "NOP", "ORA", "ASL", "SLO", "CLC", "ORA", "NOP", "SLO", "NOP", "ORA", "ASL", "SLO", // 01

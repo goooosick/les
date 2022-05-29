@@ -31,8 +31,8 @@ impl Bus {
             ram: Box::new([0u8; RAM_SIZE]),
             io_regs: Box::new([0u8; REG_SIZE]),
 
-            apu: Apu::new(),
-            ppu: Ppu::new(),
+            apu: Apu::default(),
+            ppu: Ppu::default(),
             cart,
             joystick: Default::default(),
             dma: Default::default(),
@@ -54,10 +54,8 @@ impl Bus {
 
             if self.ppu.poll_nmi() {
                 cpu.serve_interrupt(Interrupt::NMI, self);
-            } else if !cpu.interrupt_disabled() {
-                if self.apu.poll_irq() || self.cart.poll_irq() {
-                    cpu.serve_interrupt(Interrupt::IRQ, self);
-                }
+            } else if !cpu.interrupt_disabled() && (self.apu.poll_irq() || self.cart.poll_irq()) {
+                cpu.serve_interrupt(Interrupt::IRQ, self);
             }
         }
     }
@@ -93,11 +91,11 @@ impl Bus {
         match addr {
             0x0000..=0x1fff => self.ram[addr as usize & 0x07ff] = data,
             0x2000..=0x3fff => self.ppu.write(&mut self.cart, addr, data),
-            0x4014 => self.dma.start(self.cycles, data),
             0x4000..=0x4013 => self.apu.write(addr, data),
+            0x4014 => self.dma.start(self.cycles, data),
             0x4015 | 0x4017 => self.apu.write(addr, data),
             0x4016 => self.joystick.write(addr, data),
-            0x4000..=0x401f => self.io_regs[addr as usize - 0x4000] = data,
+            0x4018..=0x401f => self.io_regs[addr as usize - 0x4000] = data,
             0x4020..=0xffff => self.cart.write(addr, data),
         }
     }
@@ -106,10 +104,9 @@ impl Bus {
         match addr {
             0x0000..=0x1fff => self.ram[addr as usize & 0x07ff],
             0x2000..=0x3fff => self.ppu.read(&self.cart, addr),
-            0x4014 => 0x00,
-            0x4000..=0x4015 => self.apu.read(addr),
+            0x4000..=0x4015 => self.apu.read(addr), // except 0x4014
             0x4016..=0x4017 => self.joystick.read(addr),
-            0x4000..=0x401f => self.io_regs[addr as usize - 0x4000],
+            0x4018..=0x401f => self.io_regs[addr as usize - 0x4000],
             0x4020..=0xffff => self.cart.read(addr),
         }
     }

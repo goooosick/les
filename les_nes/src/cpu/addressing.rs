@@ -2,6 +2,7 @@ use super::Cpu;
 use crate::Bus;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[allow(clippy::upper_case_acronyms)]
 pub enum AddrMode {
     IMP,
     ACC,

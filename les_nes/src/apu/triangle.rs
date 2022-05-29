@@ -39,12 +39,10 @@ impl super::Channel for Triangle {
     }
 
     fn tick(&mut self) {
-        if self.timer.tick() {
-            if self.linear_counter != 0 && self.len_counter.count() != 0 {
-                // silence when frequency is too high
-                if self.timer.period() >= 2 {
-                    self.step = (self.step + 1) % 32;
-                }
+        if self.timer.tick() && self.linear_counter != 0 && self.len_counter.count() != 0 {
+            // silence when frequency is too high
+            if self.timer.period() >= 2 {
+                self.step = (self.step + 1) % 32;
             }
         }
     }

@@ -42,8 +42,8 @@ pub struct Apu {
     channel_ctrl: [u8; 5],
 }
 
-impl Apu {
-    pub fn new() -> Self {
+impl Default for Apu {
+    fn default() -> Self {
         Self {
             frame: FrameCounter::new(),
             pulse1: Pulse::new(false),
@@ -57,7 +57,9 @@ impl Apu {
             channel_ctrl: [1u8; 5],
         }
     }
+}
 
+impl Apu {
     pub fn tick(&mut self) {
         let step = self.frame.tick();
         self.frame_tick(step);
@@ -184,26 +186,26 @@ impl Apu {
     }
 
     pub fn set_channels(&mut self, states: &[bool; 5]) {
-        for i in 0..5 {
+        (0..5).for_each(|i| {
             self.channel_ctrl[i] = states[i] as u8;
-        }
+        });
     }
 }
 
 lazy_static::lazy_static! {
     static ref PULSE_TABLE: [f32; 31] = {
         let mut table = [0.0f32; 31];
-        for n in 1..31 {
-            table[n] = 95.52 / (8128.0 / n as f32 + 100.0);
-        }
+        table.iter_mut().enumerate().skip(1).for_each(|(i, t)| {
+            *t = 95.52 / (8128.0 / i as f32 + 100.0);
+        });
         table
     };
 
     static ref TND_TABLE: [f32; 203] = {
         let mut table = [0.0f32; 203];
-        for n in 1..203 {
-            table[n] = 163.67 / (24329.0 / n as f32 + 100.0);
-        }
+        table.iter_mut().enumerate().skip(1).for_each(|(i, t)| {
+            *t = 163.67 / (24329.0 / i as f32 + 100.0);
+        });
         table
     };
 }

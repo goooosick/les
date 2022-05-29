@@ -89,21 +89,17 @@ impl super::Channel for Dmc {
             }
         }
 
-        if self.timer.tick() {
-            if self.bits_remain > 0 {
-                if self.bits_shifter.get_bit(0) {
-                    if self.output <= 125 {
-                        self.output += 2;
-                    }
-                } else {
-                    if self.output >= 2 {
-                        self.output -= 2;
-                    }
+        if self.timer.tick() && self.bits_remain > 0 {
+            if self.bits_shifter.get_bit(0) {
+                if self.output <= 125 {
+                    self.output += 2;
                 }
-
-                self.bits_shifter >>= 1;
-                self.bits_remain -= 1;
+            } else if self.output >= 2 {
+                self.output -= 2;
             }
+
+            self.bits_shifter >>= 1;
+            self.bits_remain -= 1;
         }
     }
 
@@ -137,10 +133,8 @@ impl super::Channel for Dmc {
     fn set_enable(&mut self, enable: bool) {
         if !enable {
             self.sample_remain = 0;
-        } else {
-            if self.sample_remain == 0 {
-                self.restart();
-            }
+        } else if self.sample_remain == 0 {
+            self.restart();
         }
 
         self.irq_level.take();

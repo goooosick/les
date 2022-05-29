@@ -28,13 +28,11 @@ impl Envelope {
             self.restart = false;
             self.counter = 15;
             self.divider.reset();
-        } else {
-            if self.divider.tick() {
-                if self.counter > 0 {
-                    self.counter -= 1;
-                } else if self.looping {
-                    self.counter = 15;
-                }
+        } else if self.divider.tick() {
+            if self.counter > 0 {
+                self.counter -= 1;
+            } else if self.looping {
+                self.counter = 15;
             }
         }
     }
