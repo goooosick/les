@@ -1,15 +1,18 @@
-use super::{pick_file::*, EmuContext, SharedEmuContext};
+use super::{ControlEvent, ControlSender, EmuContext, SharedEmuContext};
 use bevy::{
     diagnostic::{Diagnostics, FrameTimeDiagnosticsPlugin},
     prelude::*,
+    tasks::IoTaskPool,
 };
 use bevy_egui::{
     egui::{self, TextureId},
     EguiContext,
 };
-use les_nes::{cpu::CpuStatus, Cartridge, InputStates};
+use les_nes::{cpu::CpuStatus, InputStates};
 
-pub struct UiPlugin;
+struct PickRom;
+
+pub struct UiPlugin(pub(crate) ControlSender);
 
 impl Plugin for UiPlugin {
     fn build(&self, app: &mut App) {
@@ -20,12 +23,15 @@ impl Plugin for UiPlugin {
                 apu_ctrl: [true; 5],
                 ..Default::default()
             })
+            .insert_resource(self.0.clone())
             .init_resource::<Option<Gamepad>>()
+            .add_event::<PickRom>()
             .add_startup_system(alloc_textures)
             .add_system(ui)
-            .add_system(load_rom_event)
+            .add_system(pick_rom)
+            .add_system(sync_emu_status)
             .add_system(gamepad_connection)
-            .add_system(update);
+            .add_system(handle_inputs);
     }
 }
 
@@ -55,9 +61,6 @@ struct UiData {
     pat_index: usize,
     nm_index: usize,
     nes_status: NesStatus,
-    reset: Option<()>,
-    step: Option<()>,
-    r#continue: Option<()>,
     swap_input: bool,
 }
 
@@ -66,7 +69,8 @@ fn ui(
     infos: Res<PpuTextures>,
     mut ui_data: ResMut<UiData>,
     diagnostics: Res<Diagnostics>,
-    mut file_events: EventWriter<RequestFile>,
+    control_sender: Res<ControlSender>,
+    mut pick_rom: EventWriter<PickRom>,
 ) {
     use egui::{menu, Slider};
 
@@ -76,7 +80,7 @@ fn ui(
         menu::bar(ui, |ui| {
             ui.menu_button("File", |ui| {
                 if ui.button("open").clicked() {
-                    file_events.send(RequestFile);
+                    pick_rom.send(PickRom);
                 }
             });
             ui.menu_button("Debug", |ui| {
@@ -122,11 +126,15 @@ fn ui(
 
             egui::Window::new("APU").resizable(false).show(ctx, |ui| {
                 ui.vertical(|ui| {
+                    let mut changed = false;
                     for (value, name) in apu_ctrl
                         .iter_mut()
                         .zip(["Pulse1", "Pulse2", "Triangle", "Noise", "DMC"].into_iter())
                     {
-                        ui.checkbox(value, name);
+                        changed |= ui.checkbox(value, name).changed();
+                    }
+                    if changed {
+                        let _ = control_sender.send(ControlEvent::AudioCtrl(*apu_ctrl));
                     }
                 });
             });
@@ -143,13 +151,13 @@ fn ui(
                     });
                     ui.horizontal(|ui| {
                         if ui.button("RESET").clicked() {
-                            ui_data.reset = Some(());
+                            let _ = control_sender.send(ControlEvent::Reset);
                         }
                         if ui.button("STEP").clicked() {
-                            ui_data.step = Some(());
+                            let _ = control_sender.send(ControlEvent::Step);
                         }
                         if ui.button("CONTINUE").clicked() {
-                            ui_data.r#continue = Some(());
+                            let _ = control_sender.send(ControlEvent::Pause);
                         }
                     });
                 });
@@ -223,94 +231,67 @@ fn alloc_textures(
     command.insert_resource(images);
 }
 
-fn update(
-    input: Res<Input<KeyCode>>,
-    gamepad: Res<Option<Gamepad>>,
-    button_inputs: Res<Input<GamepadButton>>,
+fn sync_emu_status(
     mut textures: ResMut<Assets<Image>>,
     infos: Res<PpuTextures>,
     emu: Res<SharedEmuContext>,
     mut ui_data: ResMut<UiData>,
 ) {
-    {
-        let mut emu = emu.lock().unwrap();
-        let EmuContext {
-            cpu,
-            bus,
-            pause,
-            step,
-        } = &mut *emu;
+    let mut emu = emu.lock().unwrap();
+    let EmuContext { cpu, bus, .. } = &mut *emu;
 
-        {
-            fn as_chunks_mut(slice: &mut [u8]) -> &mut [[u8; 4]] {
-                assert_eq!(slice.len() % 4, 0);
-                unsafe {
-                    std::slice::from_raw_parts_mut(slice.as_mut_ptr().cast(), slice.len() / 4)
-                }
-            }
+    fn as_chunks_mut(slice: &mut [u8]) -> &mut [[u8; 4]] {
+        assert_eq!(slice.len() % 4, 0);
+        unsafe { std::slice::from_raw_parts_mut(slice.as_mut_ptr().cast(), slice.len() / 4) }
+    }
 
-            let ppu = bus.ppu();
+    let ppu = bus.ppu();
 
-            if let Some(tex) = textures.get_mut(infos[0].handle.clone()) {
-                ppu.render_display(as_chunks_mut(tex.data.as_mut()));
-            }
-            if ui_data.debug {
-                let cart = bus.cart();
+    if let Some(tex) = textures.get_mut(infos[0].handle.clone()) {
+        ppu.render_display(as_chunks_mut(tex.data.as_mut()));
+    }
+    if ui_data.debug {
+        let cart = bus.cart();
 
-                if let Some(tex) = textures.get_mut(infos[1].handle.clone()) {
-                    ppu.render_pattern_table(
-                        cart,
-                        as_chunks_mut(tex.data.as_mut()),
-                        ui_data.pat_index,
-                    );
-                }
-                if let Some(tex) = textures.get_mut(infos[2].handle.clone()) {
-                    ppu.render_name_table(cart, as_chunks_mut(tex.data.as_mut()), ui_data.nm_index);
-                }
-                if let Some(tex) = textures.get_mut(infos[3].handle.clone()) {
-                    ppu.render_palettes(as_chunks_mut(tex.data.as_mut()));
-                }
-                if let Some(tex) = textures.get_mut(infos[4].handle.clone()) {
-                    ppu.render_sprites(cart, as_chunks_mut(tex.data.as_mut()));
-                }
-            }
+        if let Some(tex) = textures.get_mut(infos[1].handle.clone()) {
+            ppu.render_pattern_table(cart, as_chunks_mut(tex.data.as_mut()), ui_data.pat_index);
         }
-
-        if input.just_pressed(KeyCode::R) {
-            bus.reset(cpu);
-        } else if input.pressed(KeyCode::S) {
-            *pause = true;
-            *step = true;
-        } else if input.just_pressed(KeyCode::LShift) {
-            *pause = !*pause;
+        if let Some(tex) = textures.get_mut(infos[2].handle.clone()) {
+            ppu.render_name_table(cart, as_chunks_mut(tex.data.as_mut()), ui_data.nm_index);
         }
-
-        let game_inputs = collect_inputs(&input, &gamepad, &button_inputs, ui_data.swap_input);
-        bus.set_input0(game_inputs.0);
-        bus.set_input1(game_inputs.1);
-        bus.set_audio_control(&ui_data.apu_ctrl);
-
-        ui_data.nes_status = NesStatus {
-            cpu_status: Some(cpu.status()),
-            ppu_timing: bus.ppu().timing(),
-            ppu_frames: bus.ppu().frame_count(),
-            cycles: bus.cycles(),
-        };
-
-        if ui_data.reset.is_some() {
-            bus.reset(cpu);
-            ui_data.reset.take();
+        if let Some(tex) = textures.get_mut(infos[3].handle.clone()) {
+            ppu.render_palettes(as_chunks_mut(tex.data.as_mut()));
         }
-        if ui_data.step.is_some() {
-            *pause = true;
-            *step = true;
-            ui_data.step.take();
-        }
-        if ui_data.r#continue.is_some() {
-            *pause = false;
-            ui_data.r#continue.take();
+        if let Some(tex) = textures.get_mut(infos[4].handle.clone()) {
+            ppu.render_sprites(cart, as_chunks_mut(tex.data.as_mut()));
         }
     }
+
+    ui_data.nes_status = NesStatus {
+        cpu_status: Some(cpu.status()),
+        ppu_timing: bus.ppu().timing(),
+        ppu_frames: bus.ppu().frame_count(),
+        cycles: bus.cycles(),
+    };
+}
+
+fn handle_inputs(
+    input: Res<Input<KeyCode>>,
+    gamepad: Res<Option<Gamepad>>,
+    button_inputs: Res<Input<GamepadButton>>,
+    control_sender: Res<ControlSender>,
+    mut ui_data: ResMut<UiData>,
+) {
+    if input.just_pressed(KeyCode::R) {
+        let _ = control_sender.send(ControlEvent::Reset);
+    } else if input.pressed(KeyCode::S) {
+        let _ = control_sender.send(ControlEvent::Step);
+    } else if input.just_pressed(KeyCode::LShift) {
+        let _ = control_sender.send(ControlEvent::Pause);
+    }
+
+    let game_inputs = collect_inputs(&input, &gamepad, &button_inputs, ui_data.swap_input);
+    let _ = control_sender.send(ControlEvent::Inputs(game_inputs.0, game_inputs.1));
 
     if input.just_pressed(KeyCode::Equals) {
         ui_data.scale = (ui_data.scale + 1).min(4);
@@ -381,16 +362,19 @@ fn collect_inputs(
     }
 }
 
-fn load_rom_event(emu: Res<SharedEmuContext>, mut events: EventReader<SelectFile>) {
-    for file in events.iter() {
-        if let Some(cart) = Cartridge::load(file.0.as_ref()) {
-            let mut emu = emu.lock().unwrap();
-            let EmuContext { cpu, bus, .. } = &mut *emu;
-
-            bus.load_cart(cart);
-            bus.reset(cpu);
-
-            break;
-        }
+fn pick_rom(
+    task_pool: Res<IoTaskPool>,
+    sender: Res<ControlSender>,
+    mut events: EventReader<PickRom>,
+) {
+    if events.iter().next().is_some() {
+        let sender = sender.clone();
+        task_pool
+            .spawn(async move {
+                if let Some(handle) = rfd::AsyncFileDialog::new().pick_file().await {
+                    let _ = sender.send(ControlEvent::LoadCart(handle.read().await));
+                }
+            })
+            .detach();
     }
 }

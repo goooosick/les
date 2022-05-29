@@ -1,16 +1,28 @@
 use bevy::prelude::*;
 use cpal::traits::{DeviceTrait, HostTrait, StreamTrait};
-use les_nes::{Bus, Cartridge, Cpu};
+use les_nes::{Bus, Cartridge, Cpu, InputStates};
 use std::sync::{Arc, Mutex};
 
-mod pick_file;
 mod ui;
+
+type ControlReceiver = crossbeam_channel::Receiver<ControlEvent>;
+type ControlSender = crossbeam_channel::Sender<ControlEvent>;
+
+enum ControlEvent {
+    LoadCart(Vec<u8>),
+    AudioCtrl([bool; 5]),
+    Inputs(InputStates, InputStates),
+    Reset,
+    Pause,
+    Step,
+}
 
 struct EmuContext {
     pub cpu: Cpu,
     pub bus: Bus,
     pub pause: bool,
     pub step: bool,
+    pub cnotrol_events: ControlReceiver,
 }
 
 type SharedEmuContext = Arc<Mutex<EmuContext>>;
@@ -19,6 +31,7 @@ fn main() {
     #[cfg(target_arch = "wasm32")]
     console_error_panic_hook::set_once();
 
+    let (sender, receiver) = crossbeam_channel::unbounded();
     let emu = {
         let mut bus = Bus::new(Cartridge::empty());
         let mut cpu = Cpu::default();
@@ -29,6 +42,7 @@ fn main() {
             bus,
             pause: false,
             step: false,
+            cnotrol_events: receiver,
         }))
     };
 
@@ -53,8 +67,7 @@ fn main() {
         .add_plugin(bevy::diagnostic::DiagnosticsPlugin)
         .add_plugin(bevy::diagnostic::FrameTimeDiagnosticsPlugin)
         .add_plugin(bevy::gilrs::GilrsPlugin::default())
-        .add_plugin(ui::UiPlugin)
-        .add_plugin(pick_file::PickFilePlugin)
+        .add_plugin(ui::UiPlugin(sender))
         .run();
 }
 
@@ -98,7 +111,30 @@ where
                     cpu,
                     pause,
                     step,
+                    cnotrol_events,
                 } = &mut *emu;
+
+                while let Ok(ev) = cnotrol_events.try_recv() {
+                    match ev {
+                        ControlEvent::LoadCart(data) => {
+                            if let Some(cart) = Cartridge::load(&data) {
+                                bus.load_cart(cart);
+                                bus.reset(cpu);
+                            }
+                        }
+                        ControlEvent::AudioCtrl(states) => bus.set_audio_control(&states),
+                        ControlEvent::Inputs(p0, p1) => {
+                            bus.set_input0(p0);
+                            bus.set_input1(p1);
+                        }
+                        ControlEvent::Reset => bus.reset(cpu),
+                        ControlEvent::Pause => *pause = !*pause,
+                        ControlEvent::Step => {
+                            *pause = true;
+                            *step = true;
+                        }
+                    }
+                }
 
                 if *pause {
                     if *step {
