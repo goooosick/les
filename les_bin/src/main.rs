@@ -97,9 +97,13 @@ where
 {
     let sample_rate = config.sample_rate.0 as f32;
     let channels = config.channels as usize;
+    let mut sample_buf = vec![0i16; 4096];
 
-    let sample_step = les_nes::CPU_FREQUENCY / sample_rate;
-    let mut sample_delta = sample_step;
+    emu.lock()
+        .unwrap()
+        .bus
+        .resampler()
+        .set_rates(sample_rate as _);
 
     device
         .build_output_stream(
@@ -142,25 +146,25 @@ where
                         *step = false;
                     }
 
-                    bus.audio_samples().clear();
+                    bus.resampler().clear();
                     data.fill(cpal::Sample::from(&0.0f32));
                 } else {
                     let sample_len = data.len() / channels;
-                    let sample_count = sample_len * sample_step.ceil() as usize;
 
-                    while bus.apu().sample_len() < sample_count {
+                    let needed_cycles = bus.resampler().clocks_needed(sample_len);
+                    let cycles = bus.cycles() + needed_cycles;
+                    while bus.cycles() < cycles {
                         bus.exec(cpu);
                     }
 
-                    let mut i = 0;
-                    let samples = bus.audio_samples();
-                    for d in data.chunks_exact_mut(channels) {
-                        d.fill(cpal::Sample::from(&samples[i]));
+                    bus.resampler().end_frame();
+                    bus.resampler().read_samples(&mut sample_buf[..sample_len]);
 
-                        i += sample_delta.trunc() as usize;
-                        sample_delta = sample_delta.fract() + sample_step;
-                    }
-                    bus.audio_samples().drain(0..i);
+                    data.chunks_exact_mut(channels)
+                        .zip(&sample_buf[..sample_len])
+                        .for_each(|(b, s)| {
+                            b.fill(cpal::Sample::from(s));
+                        });
                 }
             },
             |err| eprintln!("an error occurred on stream: {}", err),

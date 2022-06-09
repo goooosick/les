@@ -1,15 +1,16 @@
 use bit_field::BitField;
-use std::collections::VecDeque;
 
 mod dmc;
 mod noise;
 mod pulse;
+mod resampler;
 mod triangle;
 mod units;
 
 use dmc::Dmc;
 use noise::Noise;
 use pulse::Pulse;
+pub use resampler::Resampler;
 use triangle::Triangle;
 use units::*;
 
@@ -38,7 +39,7 @@ pub struct Apu {
     dmc: Dmc,
 
     cycles: usize,
-    samples: VecDeque<f32>,
+    resampler: Resampler,
     channel_ctrl: [u8; 5],
 }
 
@@ -53,7 +54,7 @@ impl Default for Apu {
             dmc: Dmc::new(),
 
             cycles: 0,
-            samples: VecDeque::new(),
+            resampler: Resampler::new(4096),
             channel_ctrl: [1u8; 5],
         }
     }
@@ -78,8 +79,8 @@ impl Apu {
         let tnd_index = self.triangle.sample() * 3 * self.channel_ctrl[2]
             + self.noise.sample() * 2 * self.channel_ctrl[3]
             + self.dmc.sample() * self.channel_ctrl[4];
-        self.samples
-            .push_back(PULSE_TABLE[pulse_index as usize] + TND_TABLE[tnd_index as usize]);
+        self.resampler
+            .add_sample(PULSE_TABLE[pulse_index as usize] + TND_TABLE[tnd_index as usize]);
     }
 
     fn frame_tick(&mut self, step: Step) {
@@ -113,7 +114,7 @@ impl Apu {
 
     pub fn reset(&mut self) {
         self.write(0x4015, 0x00);
-        self.samples.clear();
+        self.resampler.clear();
     }
 
     pub fn read(&self, addr: u16) -> u8 {
@@ -177,12 +178,8 @@ impl Apu {
         }
     }
 
-    pub fn sample_len(&self) -> usize {
-        self.samples.len()
-    }
-
-    pub fn samples(&mut self) -> &mut VecDeque<f32> {
-        &mut self.samples
+    pub fn resampler(&mut self) -> &mut Resampler {
+        &mut self.resampler
     }
 
     pub fn set_channels(&mut self, states: &[bool; 5]) {

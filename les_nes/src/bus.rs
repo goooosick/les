@@ -1,8 +1,6 @@
-use std::collections::VecDeque;
-
 use self::dma::Dma;
 use self::joystick::Joystick;
-use crate::{cpu::Interrupt, Apu, Cartridge, Cpu, Ppu};
+use crate::{cpu::Interrupt, Apu, Cartridge, Cpu, Ppu, Resampler};
 
 pub use joystick::InputStates;
 
@@ -144,8 +142,8 @@ impl Bus {
         &self.apu
     }
 
-    pub fn audio_samples(&mut self) -> &mut VecDeque<f32> {
-        self.apu.samples()
+    pub fn resampler(&mut self) -> &mut Resampler {
+        self.apu.resampler()
     }
 
     /// override channel state (pulse1, pulse2, triangle, noise, dmc)

@@ -6,7 +6,7 @@ pub mod cart;
 pub mod cpu;
 pub mod ppu;
 
-pub use apu::Apu;
+pub use apu::{Apu, Resampler};
 pub use bus::{Bus, InputStates};
 pub use cart::Cartridge;
 pub use cpu::Cpu;
