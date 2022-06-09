@@ -65,7 +65,7 @@ struct UiData {
 }
 
 fn ui(
-    egui_context: ResMut<EguiContext>,
+    mut egui_context: ResMut<EguiContext>,
     infos: Res<PpuTextures>,
     mut ui_data: ResMut<UiData>,
     diagnostics: Res<Diagnostics>,
@@ -74,7 +74,7 @@ fn ui(
 ) {
     use egui::{menu, Slider};
 
-    let ctx = egui_context.ctx();
+    let ctx = egui_context.ctx_mut();
 
     egui::TopBottomPanel::top("").show(ctx, |ui| {
         menu::bar(ui, |ui| {
@@ -207,7 +207,7 @@ fn alloc_textures(
 
     let mut images = vec![];
 
-    for (i, (size, name)) in TEXTURE_INFOS.into_iter().enumerate() {
+    TEXTURE_INFOS.into_iter().for_each(|(size, name)| {
         let handle = assets.add(Image::new(
             Extent3d {
                 width: size.0 as _,
@@ -215,18 +215,18 @@ fn alloc_textures(
                 depth_or_array_layers: 1,
             },
             TextureDimension::D2,
-            vec![0u8; size.0 * size.1 * 4],
+            vec![255u8; size.0 * size.1 * 4],
             TextureFormat::Rgba8UnormSrgb,
         ));
+        let id = egui_context.add_image(handle.clone_weak());
 
-        egui_context.set_egui_texture(i as _, handle.as_weak());
         images.push(PpuTexture {
-            id: egui::TextureId::User(i as _),
+            id,
             size: (size.0 as f32, size.1 as f32).into(),
             name,
             handle,
         });
-    }
+    });
 
     command.insert_resource(images);
 }

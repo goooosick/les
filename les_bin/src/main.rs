@@ -53,7 +53,7 @@ fn main() {
     app.insert_resource(emu)
         .insert_resource(WindowDescriptor {
             title: "LES!".to_owned(),
-            vsync: true,
+            present_mode: bevy::window::PresentMode::Fifo,
             ..Default::default()
         })
         .add_plugin(bevy::log::LogPlugin::default())
