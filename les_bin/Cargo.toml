@@ -5,14 +5,13 @@ edition = "2021"
 
 [dependencies]
 les_nes = { path = "../les_nes" }
-bevy = { version = "0.7.0", default-features = false, features = [
+bevy = { version = "0.8.0", default-features = false, features = [
     "bevy_gilrs",
     "bevy_winit",
     "bevy_render",
     "bevy_core_pipeline",
 ] }
-bevy_egui = "0.14.0"
-egui = "0.18.1"
+bevy_egui = "0.15.0"
 rfd = "0.8.2"
 crossbeam-channel = "0.5.4"
 

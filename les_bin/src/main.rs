@@ -53,20 +53,11 @@ fn main() {
     app.insert_resource(emu)
         .insert_resource(WindowDescriptor {
             title: "LES!".to_owned(),
-            present_mode: bevy::window::PresentMode::Fifo,
+            present_mode: bevy::window::PresentMode::AutoVsync,
             ..Default::default()
         })
-        .add_plugin(bevy::log::LogPlugin::default())
-        .add_plugin(bevy::core::CorePlugin::default())
-        .add_plugin(bevy::input::InputPlugin::default())
-        .add_plugin(bevy::window::WindowPlugin::default())
-        .add_plugin(bevy::asset::AssetPlugin::default())
-        .add_plugin(bevy::winit::WinitPlugin::default())
-        .add_plugin(bevy::render::RenderPlugin::default())
-        .add_plugin(bevy::core_pipeline::CorePipelinePlugin::default())
-        .add_plugin(bevy::diagnostic::DiagnosticsPlugin)
+        .add_plugins(DefaultPlugins)
         .add_plugin(bevy::diagnostic::FrameTimeDiagnosticsPlugin)
-        .add_plugin(bevy::gilrs::GilrsPlugin::default())
         .add_plugin(ui::UiPlugin(sender))
         .run();
 }

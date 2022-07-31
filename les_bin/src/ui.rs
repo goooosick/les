@@ -2,6 +2,7 @@ use super::{ControlEvent, ControlSender, EmuContext, SharedEmuContext};
 use bevy::{
     diagnostic::{Diagnostics, FrameTimeDiagnosticsPlugin},
     prelude::*,
+    render::texture::ImageSampler,
     tasks::IoTaskPool,
 };
 use bevy_egui::{
@@ -208,7 +209,7 @@ fn alloc_textures(
     let mut images = vec![];
 
     TEXTURE_INFOS.into_iter().for_each(|(size, name)| {
-        let handle = assets.add(Image::new(
+        let mut image = Image::new(
             Extent3d {
                 width: size.0 as _,
                 height: size.1 as _,
@@ -217,7 +218,10 @@ fn alloc_textures(
             TextureDimension::D2,
             vec![255u8; size.0 * size.1 * 4],
             TextureFormat::Rgba8UnormSrgb,
-        ));
+        );
+        image.sampler_descriptor = ImageSampler::nearest();
+
+        let handle = assets.add(image);
         let id = egui_context.add_image(handle.clone_weak());
 
         images.push(PpuTexture {
@@ -247,22 +251,22 @@ fn sync_emu_status(
 
     let ppu = bus.ppu();
 
-    if let Some(tex) = textures.get_mut(infos[0].handle.clone()) {
+    if let Some(tex) = textures.get_mut(&infos[0].handle) {
         ppu.render_display(as_chunks_mut(tex.data.as_mut()));
     }
     if ui_data.debug {
         let cart = bus.cart();
 
-        if let Some(tex) = textures.get_mut(infos[1].handle.clone()) {
+        if let Some(tex) = textures.get_mut(&infos[1].handle) {
             ppu.render_pattern_table(cart, as_chunks_mut(tex.data.as_mut()), ui_data.pat_index);
         }
-        if let Some(tex) = textures.get_mut(infos[2].handle.clone()) {
+        if let Some(tex) = textures.get_mut(&infos[2].handle) {
             ppu.render_name_table(cart, as_chunks_mut(tex.data.as_mut()), ui_data.nm_index);
         }
-        if let Some(tex) = textures.get_mut(infos[3].handle.clone()) {
+        if let Some(tex) = textures.get_mut(&infos[3].handle) {
             ppu.render_palettes(as_chunks_mut(tex.data.as_mut()));
         }
-        if let Some(tex) = textures.get_mut(infos[4].handle.clone()) {
+        if let Some(tex) = textures.get_mut(&infos[4].handle) {
             ppu.render_sprites(cart, as_chunks_mut(tex.data.as_mut()));
         }
     }
@@ -310,12 +314,18 @@ fn gamepad_connection(
 ) {
     for event in gamepad_event.iter() {
         match &event {
-            GamepadEvent(g, GamepadEventType::Connected) => {
+            GamepadEvent {
+                gamepad: g,
+                event_type: GamepadEventType::Connected,
+            } => {
                 if gamepad.is_none() {
                     gamepad.replace(*g);
                 }
             }
-            GamepadEvent(g, GamepadEventType::Disconnected) => {
+            GamepadEvent {
+                gamepad: g,
+                event_type: GamepadEventType::Disconnected,
+            } => {
                 if (*gamepad).as_ref() == Some(g) {
                     gamepad.take();
                 }
@@ -344,14 +354,14 @@ fn collect_inputs(
     let input1 = {
         let bis = button_inputs;
         gamepad.map_or(Default::default(), |g| les_nes::InputStates {
-            a: bis.pressed(GamepadButton(g, GamepadButtonType::South)),
-            b: bis.pressed(GamepadButton(g, GamepadButtonType::East)),
-            select: bis.pressed(GamepadButton(g, GamepadButtonType::Select)),
-            start: bis.pressed(GamepadButton(g, GamepadButtonType::Start)),
-            up: bis.pressed(GamepadButton(g, GamepadButtonType::DPadUp)),
-            down: bis.pressed(GamepadButton(g, GamepadButtonType::DPadDown)),
-            left: bis.pressed(GamepadButton(g, GamepadButtonType::DPadLeft)),
-            right: bis.pressed(GamepadButton(g, GamepadButtonType::DPadRight)),
+            a: bis.pressed(GamepadButton::new(g, GamepadButtonType::South)),
+            b: bis.pressed(GamepadButton::new(g, GamepadButtonType::East)),
+            select: bis.pressed(GamepadButton::new(g, GamepadButtonType::Select)),
+            start: bis.pressed(GamepadButton::new(g, GamepadButtonType::Start)),
+            up: bis.pressed(GamepadButton::new(g, GamepadButtonType::DPadUp)),
+            down: bis.pressed(GamepadButton::new(g, GamepadButtonType::DPadDown)),
+            left: bis.pressed(GamepadButton::new(g, GamepadButtonType::DPadLeft)),
+            right: bis.pressed(GamepadButton::new(g, GamepadButtonType::DPadRight)),
         })
     };
 
@@ -362,12 +372,9 @@ fn collect_inputs(
     }
 }
 
-fn pick_rom(
-    task_pool: Res<IoTaskPool>,
-    sender: Res<ControlSender>,
-    mut events: EventReader<PickRom>,
-) {
+fn pick_rom(sender: Res<ControlSender>, mut events: EventReader<PickRom>) {
     if events.iter().next().is_some() {
+        let task_pool = IoTaskPool::get();
         let sender = sender.clone();
         task_pool
             .spawn(async move {
