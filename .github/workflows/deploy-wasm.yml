@@ -27,11 +27,13 @@ jobs:
           path: |
             ~/.cargo/registry
             ~/.cargo/git
-            target
+            target/
           key: ${{ runner.os }}-cargo-${{ hashFiles('**/Cargo.toml') }}
 
       - name: build wasm
-        run: sh scripts/build_web.sh
+        run: |
+          sh scripts/build_web.sh
+          cp -a web/. tmp/ -v
 
       - name: checkout web
         uses: actions/checkout@v2
@@ -43,7 +45,7 @@ jobs:
         run: |
           git config --local user.email "41898282+github-actions[bot]@users.noreply.github.com"
           git config --local user.name "github-actions[bot]"
-          cp -rf web/* . -v
+          cp -rf tmp/* . -v
           git add -u && git add -f pkg
           git commit -m "deploy wasm"
           git push -f origin web

@@ -54,6 +54,9 @@ fn main() {
         .insert_resource(WindowDescriptor {
             title: "LES!".to_owned(),
             present_mode: bevy::window::PresentMode::AutoVsync,
+            #[cfg(target_arch = "wasm32")]
+            canvas: Some("#viewport".to_string()),
+            fit_canvas_to_parent: true,
             ..Default::default()
         })
         .add_plugins(DefaultPlugins)
