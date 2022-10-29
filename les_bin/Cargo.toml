@@ -6,7 +6,6 @@ edition = "2021"
 [dependencies]
 les_nes = { path = "../les_nes" }
 bevy = { version = "0.8.0", default-features = false, features = [
-    "bevy_gilrs",
     "bevy_winit",
     "bevy_render",
     "bevy_core_pipeline",
@@ -14,6 +13,7 @@ bevy = { version = "0.8.0", default-features = false, features = [
 bevy_egui = "0.15.0"
 rfd = "0.8.2"
 crossbeam-channel = "0.5.4"
+leafwing-input-manager = { version = "0.6.1", default-features = false }
 
 [target.'cfg(not(target_arch = "wasm32"))'.dependencies]
 cpal = "0.13.5"

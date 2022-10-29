@@ -9,28 +9,27 @@ use bevy_egui::{
     egui::{self, TextureId},
     EguiContext,
 };
+use leafwing_input_manager::prelude::*;
 use les_nes::{cpu::CpuStatus, InputStates};
-
-struct PickRom;
 
 pub struct UiPlugin(pub(crate) ControlSender);
 
 impl Plugin for UiPlugin {
     fn build(&self, app: &mut App) {
         app.add_plugin(bevy_egui::EguiPlugin)
+            .add_plugin(InputManagerPlugin::<InputAction>::default())
             .insert_resource(UiData {
                 scale: 2.0,
                 apu_ctrl: [true; 5],
                 ..Default::default()
             })
             .insert_resource(self.0.clone())
-            .init_resource::<Option<Gamepad>>()
             .add_event::<PickRom>()
             .add_startup_system(alloc_textures)
+            .add_startup_system(spawn_players)
             .add_system(ui)
             .add_system(pick_rom)
             .add_system(sync_emu_status)
-            .add_system(gamepad_connection)
             .add_system(handle_inputs);
     }
 }
@@ -62,6 +61,26 @@ struct UiData {
     nes_status: NesStatus,
     swap_input: bool,
 }
+
+struct PickRom;
+
+#[derive(Actionlike, PartialEq, Eq, Clone, Copy, Hash, Debug)]
+enum InputAction {
+    A,
+    B,
+    Select,
+    Start,
+    Up,
+    Down,
+    Left,
+    Right,
+}
+
+#[derive(Component)]
+struct Player1;
+
+#[derive(Component)]
+struct Player2;
 
 fn ui(
     mut egui_context: ResMut<EguiContext>,
@@ -271,10 +290,47 @@ fn sync_emu_status(
     };
 }
 
+fn spawn_players(mut commands: Commands) {
+    commands
+        .spawn_bundle(InputManagerBundle {
+            input_map: {
+                InputMap::new([
+                    (KeyCode::Z, InputAction::A),
+                    (KeyCode::X, InputAction::B),
+                    (KeyCode::C, InputAction::Select),
+                    (KeyCode::V, InputAction::Start),
+                    (KeyCode::Up, InputAction::Up),
+                    (KeyCode::Down, InputAction::Down),
+                    (KeyCode::Left, InputAction::Left),
+                    (KeyCode::Right, InputAction::Right),
+                ])
+            },
+            ..Default::default()
+        })
+        .insert(Player1);
+    commands
+        .spawn_bundle(InputManagerBundle {
+            input_map: {
+                InputMap::new([
+                    (GamepadButtonType::South, InputAction::A),
+                    (GamepadButtonType::East, InputAction::B),
+                    (GamepadButtonType::Select, InputAction::Select),
+                    (GamepadButtonType::Start, InputAction::Start),
+                    (GamepadButtonType::DPadUp, InputAction::Up),
+                    (GamepadButtonType::DPadDown, InputAction::Down),
+                    (GamepadButtonType::DPadLeft, InputAction::Left),
+                    (GamepadButtonType::DPadRight, InputAction::Right),
+                ])
+            },
+            ..Default::default()
+        })
+        .insert(Player2);
+}
+
 fn handle_inputs(
+    query_p1: Query<&ActionState<InputAction>, With<Player1>>,
+    query_p2: Query<&ActionState<InputAction>, With<Player2>>,
     input: Res<Input<KeyCode>>,
-    gamepad: Res<Option<Gamepad>>,
-    button_inputs: Res<Input<GamepadButton>>,
     control_sender: Res<ControlSender>,
     ui_data: Res<UiData>,
 ) {
@@ -286,71 +342,26 @@ fn handle_inputs(
         let _ = control_sender.send(ControlEvent::Pause);
     }
 
-    let game_inputs = collect_inputs(&input, &gamepad, &button_inputs, ui_data.swap_input);
-    let _ = control_sender.send(ControlEvent::Inputs(game_inputs.0, game_inputs.1));
-}
+    let states_p1 = action_to_states(query_p1.single());
+    let states_p2 = action_to_states(query_p2.single());
 
-fn gamepad_connection(
-    mut gamepad: ResMut<Option<Gamepad>>,
-    mut gamepad_event: EventReader<GamepadEvent>,
-) {
-    for event in gamepad_event.iter() {
-        match &event {
-            GamepadEvent {
-                gamepad: g,
-                event_type: GamepadEventType::Connected,
-            } => {
-                if gamepad.is_none() {
-                    gamepad.replace(*g);
-                }
-            }
-            GamepadEvent {
-                gamepad: g,
-                event_type: GamepadEventType::Disconnected,
-            } => {
-                if (*gamepad).as_ref() == Some(g) {
-                    gamepad.take();
-                }
-            }
-            _ => (),
-        }
-    }
-}
-
-fn collect_inputs(
-    input: &Res<Input<KeyCode>>,
-    gamepad: &Res<Option<Gamepad>>,
-    button_inputs: &Res<Input<GamepadButton>>,
-    swap: bool,
-) -> (InputStates, InputStates) {
-    let input0 = les_nes::InputStates {
-        a: input.pressed(KeyCode::Z),
-        b: input.pressed(KeyCode::X),
-        select: input.pressed(KeyCode::C),
-        start: input.pressed(KeyCode::V),
-        up: input.pressed(KeyCode::Up),
-        down: input.pressed(KeyCode::Down),
-        left: input.pressed(KeyCode::Left),
-        right: input.pressed(KeyCode::Right),
-    };
-    let input1 = {
-        let bis = button_inputs;
-        gamepad.map_or(Default::default(), |g| les_nes::InputStates {
-            a: bis.pressed(GamepadButton::new(g, GamepadButtonType::South)),
-            b: bis.pressed(GamepadButton::new(g, GamepadButtonType::East)),
-            select: bis.pressed(GamepadButton::new(g, GamepadButtonType::Select)),
-            start: bis.pressed(GamepadButton::new(g, GamepadButtonType::Start)),
-            up: bis.pressed(GamepadButton::new(g, GamepadButtonType::DPadUp)),
-            down: bis.pressed(GamepadButton::new(g, GamepadButtonType::DPadDown)),
-            left: bis.pressed(GamepadButton::new(g, GamepadButtonType::DPadLeft)),
-            right: bis.pressed(GamepadButton::new(g, GamepadButtonType::DPadRight)),
-        })
-    };
-
-    if swap {
-        (input1, input0)
+    let _ = control_sender.send(if !ui_data.swap_input {
+        ControlEvent::Inputs(states_p1, states_p2)
     } else {
-        (input0, input1)
+        ControlEvent::Inputs(states_p2, states_p1)
+    });
+}
+
+fn action_to_states(s: &ActionState<InputAction>) -> InputStates {
+    les_nes::InputStates {
+        a: s.pressed(InputAction::A),
+        b: s.pressed(InputAction::B),
+        select: s.pressed(InputAction::Select),
+        start: s.pressed(InputAction::Start),
+        up: s.pressed(InputAction::Up),
+        down: s.pressed(InputAction::Down),
+        left: s.pressed(InputAction::Left),
+        right: s.pressed(InputAction::Right),
     }
 }
 
