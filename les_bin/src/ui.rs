@@ -19,8 +19,7 @@ impl Plugin for UiPlugin {
     fn build(&self, app: &mut App) {
         app.add_plugin(bevy_egui::EguiPlugin)
             .insert_resource(UiData {
-                scale: 2,
-                debug_scales: [1.0; 4],
+                scale: 2.0,
                 apu_ctrl: [true; 5],
                 ..Default::default()
             })
@@ -56,8 +55,7 @@ struct NesStatus {
 #[derive(Default)]
 struct UiData {
     debug: bool,
-    scale: usize,
-    debug_scales: [f32; 4],
+    scale: f32,
     apu_ctrl: [bool; 5],
     pat_index: usize,
     nm_index: usize,
@@ -85,7 +83,8 @@ fn ui(
                 }
             });
             ui.menu_button("Debug", |ui| {
-                ui.checkbox(&mut ui_data.debug, "debug_windows");
+                ui.checkbox(&mut ui_data.debug, "debug panels");
+                ui.checkbox(&mut ui_data.swap_input, "swap player");
             });
             ui.menu_button("Layout", |ui| {
                 if ui.button("reset").clicked() {
@@ -100,22 +99,15 @@ fn ui(
             let UiData {
                 pat_index,
                 nm_index,
-                debug_scales,
                 apu_ctrl,
                 ..
             } = &mut *ui_data;
 
-            for (index, (tex, dscale)) in infos
-                .iter()
-                .skip(1)
-                .zip(debug_scales.iter_mut())
-                .enumerate()
-            {
+            for (index, tex) in infos.iter().skip(1).enumerate() {
                 egui::Window::new(tex.name)
                     .resizable(false)
                     .show(ctx, |ui| {
-                        ui.add(Slider::new(dscale, 1.0..=4.0).text("scale"));
-                        ui.image(tex.id, tex.size * *dscale);
+                        ui.image(tex.id, tex.size);
 
                         if index == 0 {
                             ui.add(Slider::new(pat_index, 0..=7).text("index"));
@@ -184,9 +176,9 @@ fn ui(
         ))
         .id(egui::Id::new("window"))
         .collapsible(false)
-        .resizable(false)
         .show(ctx, |ui| {
-            ui.image(infos[0].id, infos[0].size * ui_data.scale as f32);
+            ui.image(infos[0].id, infos[0].size * ui_data.scale);
+            ui.add(Slider::new(&mut ui_data.scale, 1.0..=3.0));
         });
     });
 }
@@ -284,7 +276,7 @@ fn handle_inputs(
     gamepad: Res<Option<Gamepad>>,
     button_inputs: Res<Input<GamepadButton>>,
     control_sender: Res<ControlSender>,
-    mut ui_data: ResMut<UiData>,
+    ui_data: Res<UiData>,
 ) {
     if input.just_pressed(KeyCode::R) {
         let _ = control_sender.send(ControlEvent::Reset);
@@ -296,16 +288,6 @@ fn handle_inputs(
 
     let game_inputs = collect_inputs(&input, &gamepad, &button_inputs, ui_data.swap_input);
     let _ = control_sender.send(ControlEvent::Inputs(game_inputs.0, game_inputs.1));
-
-    if input.just_pressed(KeyCode::Equals) {
-        ui_data.scale = (ui_data.scale + 1).min(4);
-    } else if input.just_pressed(KeyCode::Minus) {
-        ui_data.scale = (ui_data.scale - 1).max(1);
-    } else if input.just_pressed(KeyCode::Tab) {
-        ui_data.debug = !ui_data.debug;
-    } else if input.just_pressed(KeyCode::G) {
-        ui_data.swap_input = !ui_data.swap_input;
-    }
 }
 
 fn gamepad_connection(
