@@ -5,19 +5,19 @@ edition = "2021"
 
 [dependencies]
 les_nes = { path = "../les_nes" }
-bevy = { version = "0.8.0", default-features = false, features = [
+bevy = { version = "0.10", default-features = false, features = [
     "bevy_winit",
     "bevy_render",
     "bevy_core_pipeline",
 ] }
-bevy_egui = "0.15.0"
-rfd = "0.8.2"
-crossbeam-channel = "0.5.4"
-leafwing-input-manager = { version = "0.6.1", default-features = false }
+bevy_egui = "0.20"
+rfd = "0.11"
+crossbeam-channel = "0.5"
+leafwing-input-manager = { version = "0.9", default-features = false }
 
 [target.'cfg(not(target_arch = "wasm32"))'.dependencies]
-cpal = "0.13.5"
+cpal = "0.15"
 
 [target.'cfg(target_arch = "wasm32")'.dependencies]
-cpal = { version = "0.13.5", features = ["wasm-bindgen"] }
+cpal = { version = "0.15", features = ["wasm-bindgen"] }
 console_error_panic_hook = "0.1.7"

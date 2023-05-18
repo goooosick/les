@@ -7,12 +7,15 @@ use bevy::{
 };
 use bevy_egui::{
     egui::{self, TextureId},
-    EguiContext,
+    EguiContexts,
 };
 use leafwing_input_manager::prelude::*;
 use les_nes::{cpu::CpuStatus, InputStates};
 
-pub struct UiPlugin(pub(crate) ControlSender);
+pub struct UiPlugin {
+    pub(crate) emu: SharedEmuContext,
+    pub(crate) control_sender: ControlSender,
+}
 
 impl Plugin for UiPlugin {
     fn build(&self, app: &mut App) {
@@ -23,7 +26,8 @@ impl Plugin for UiPlugin {
                 apu_ctrl: [true; 5],
                 ..Default::default()
             })
-            .insert_resource(self.0.clone())
+            .insert_resource(SharedEmuContextRes(self.emu.clone()))
+            .insert_resource(ControlSenderRes(self.control_sender.clone()))
             .add_event::<PickRom>()
             .add_startup_system(alloc_textures)
             .add_startup_system(spawn_players)
@@ -41,7 +45,8 @@ struct PpuTexture {
     handle: Handle<Image>,
 }
 
-type PpuTextures = Vec<PpuTexture>;
+#[derive(Resource)]
+struct PpuTextures(Vec<PpuTexture>);
 
 #[derive(Default)]
 struct NesStatus {
@@ -51,7 +56,7 @@ struct NesStatus {
     cycles: usize,
 }
 
-#[derive(Default)]
+#[derive(Default, Resource)]
 struct UiData {
     debug: bool,
     scale: f32,
@@ -61,6 +66,12 @@ struct UiData {
     nes_status: NesStatus,
     swap_input: bool,
 }
+
+#[derive(Resource)]
+struct ControlSenderRes(ControlSender);
+
+#[derive(Resource)]
+struct SharedEmuContextRes(SharedEmuContext);
 
 struct PickRom;
 
@@ -83,16 +94,18 @@ struct Player1;
 struct Player2;
 
 fn ui(
-    mut egui_context: ResMut<EguiContext>,
+    mut egui_context: EguiContexts,
     infos: Res<PpuTextures>,
     mut ui_data: ResMut<UiData>,
     diagnostics: Res<Diagnostics>,
-    control_sender: Res<ControlSender>,
+    control_sender: Res<ControlSenderRes>,
     mut pick_rom: EventWriter<PickRom>,
 ) {
     use egui::{menu, Slider};
 
     let ctx = egui_context.ctx_mut();
+    let infos = &infos.0;
+    let control_sender = &control_sender.0;
 
     egui::TopBottomPanel::top("").show(ctx, |ui| {
         menu::bar(ui, |ui| {
@@ -107,7 +120,7 @@ fn ui(
             });
             ui.menu_button("Layout", |ui| {
                 if ui.button("reset").clicked() {
-                    ctx.memory().reset_areas();
+                    ctx.memory_mut(|mem| mem.reset_areas());
                 }
             });
         });
@@ -205,7 +218,7 @@ fn ui(
 fn alloc_textures(
     mut command: Commands,
     mut assets: ResMut<Assets<Image>>,
-    mut egui_context: ResMut<EguiContext>,
+    mut egui_context: EguiContexts,
 ) {
     use bevy::render::render_resource::{Extent3d, TextureDimension, TextureFormat};
 
@@ -243,16 +256,16 @@ fn alloc_textures(
         });
     });
 
-    command.insert_resource(images);
+    command.insert_resource(PpuTextures(images));
 }
 
 fn sync_emu_status(
     mut textures: ResMut<Assets<Image>>,
     infos: Res<PpuTextures>,
-    emu: Res<SharedEmuContext>,
+    emu: Res<SharedEmuContextRes>,
     mut ui_data: ResMut<UiData>,
 ) {
-    let mut emu = emu.lock().unwrap();
+    let mut emu = emu.0.lock().unwrap();
     let EmuContext { cpu, bus, .. } = &mut *emu;
 
     fn as_chunks_mut(slice: &mut [u8]) -> &mut [[u8; 4]] {
@@ -261,6 +274,7 @@ fn sync_emu_status(
     }
 
     let ppu = bus.ppu();
+    let infos = &infos.0;
 
     if let Some(tex) = textures.get_mut(&infos[0].handle) {
         ppu.render_display(as_chunks_mut(tex.data.as_mut()));
@@ -292,7 +306,7 @@ fn sync_emu_status(
 
 fn spawn_players(mut commands: Commands) {
     commands
-        .spawn_bundle(InputManagerBundle {
+        .spawn(InputManagerBundle {
             input_map: {
                 InputMap::new([
                     (KeyCode::Z, InputAction::A),
@@ -309,7 +323,7 @@ fn spawn_players(mut commands: Commands) {
         })
         .insert(Player1);
     commands
-        .spawn_bundle(InputManagerBundle {
+        .spawn(InputManagerBundle {
             input_map: {
                 InputMap::new([
                     (GamepadButtonType::South, InputAction::A),
@@ -331,9 +345,11 @@ fn handle_inputs(
     query_p1: Query<&ActionState<InputAction>, With<Player1>>,
     query_p2: Query<&ActionState<InputAction>, With<Player2>>,
     input: Res<Input<KeyCode>>,
-    control_sender: Res<ControlSender>,
+    control_sender: Res<ControlSenderRes>,
     ui_data: Res<UiData>,
 ) {
+    let control_sender = &control_sender.0;
+
     if input.just_pressed(KeyCode::R) {
         let _ = control_sender.send(ControlEvent::Reset);
     } else if input.pressed(KeyCode::S) {
@@ -365,10 +381,10 @@ fn action_to_states(s: &ActionState<InputAction>) -> InputStates {
     }
 }
 
-fn pick_rom(sender: Res<ControlSender>, mut events: EventReader<PickRom>) {
+fn pick_rom(sender: Res<ControlSenderRes>, mut events: EventReader<PickRom>) {
     if events.iter().next().is_some() {
         let task_pool = IoTaskPool::get();
-        let sender = sender.clone();
+        let sender = sender.0.clone();
         task_pool
             .spawn(async move {
                 if let Some(handle) = rfd::AsyncFileDialog::new().pick_file().await {

@@ -50,19 +50,23 @@ fn main() {
     stream.play().unwrap();
 
     let mut app = App::new();
-    app.insert_resource(emu)
-        .insert_resource(WindowDescriptor {
+    app.add_plugins(DefaultPlugins.set(WindowPlugin {
+        primary_window: Some(Window {
             title: "LES!".to_owned(),
             present_mode: bevy::window::PresentMode::AutoVsync,
             #[cfg(target_arch = "wasm32")]
             canvas: Some("#viewport".to_string()),
             fit_canvas_to_parent: true,
             ..Default::default()
-        })
-        .add_plugins(DefaultPlugins)
-        .add_plugin(bevy::diagnostic::FrameTimeDiagnosticsPlugin)
-        .add_plugin(ui::UiPlugin(sender))
-        .run();
+        }),
+        ..Default::default()
+    }))
+    .add_plugin(bevy::diagnostic::FrameTimeDiagnosticsPlugin)
+    .add_plugin(ui::UiPlugin {
+        emu,
+        control_sender: sender,
+    })
+    .run();
 }
 
 fn init_audio(emu: SharedEmuContext) -> cpal::Stream {
@@ -78,6 +82,7 @@ fn init_audio(emu: SharedEmuContext) -> cpal::Stream {
         cpal::SampleFormat::I16 => run_audio::<i16>(emu, &device, &config.into()),
         cpal::SampleFormat::U16 => run_audio::<u16>(emu, &device, &config.into()),
         cpal::SampleFormat::F32 => run_audio::<f32>(emu, &device, &config.into()),
+        f => panic!("sample format {} not covered", f),
     }
 }
 
@@ -87,7 +92,7 @@ fn run_audio<T>(
     config: &cpal::StreamConfig,
 ) -> cpal::Stream
 where
-    T: cpal::Sample,
+    T: cpal::SizedSample + cpal::FromSample<i16>,
 {
     let sample_rate = config.sample_rate.0 as f32;
     let channels = config.channels as usize;
@@ -141,7 +146,7 @@ where
                     }
 
                     bus.resampler().clear();
-                    data.fill(cpal::Sample::from(&0.0f32));
+                    data.fill(cpal::Sample::from_sample(0));
                 } else {
                     let sample_len = data.len() / channels;
 
@@ -157,11 +162,12 @@ where
                     data.chunks_exact_mut(channels)
                         .zip(&sample_buf[..sample_len])
                         .for_each(|(b, s)| {
-                            b.fill(cpal::Sample::from(s));
+                            b.fill(cpal::Sample::from_sample(*s));
                         });
                 }
             },
             |err| eprintln!("an error occurred on stream: {}", err),
+            None,
         )
         .unwrap()
 }
