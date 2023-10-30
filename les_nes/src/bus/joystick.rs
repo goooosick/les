@@ -1,5 +1,3 @@
-use std::cell::Cell;
-
 #[derive(Debug, Default)]
 pub struct Joystick {
     input0: Input,
@@ -8,7 +6,7 @@ pub struct Joystick {
 }
 
 impl Joystick {
-    pub fn read(&self, addr: u16) -> u8 {
+    pub fn read(&mut self, addr: u16) -> u8 {
         if !self.reading {
             self.input0.load();
             self.input1.load();
@@ -69,17 +67,17 @@ impl InputStates {
 #[derive(Debug, Default)]
 struct Input {
     states: InputStates,
-    input: Cell<u8>,
+    input: u8,
 }
 
 impl Input {
-    fn load(&self) {
-        self.input.set(self.states.to_u8())
+    fn load(&mut self) {
+        self.input = self.states.to_u8();
     }
 
-    fn next(&self) -> u8 {
-        let b = self.input.get();
-        self.input.set(b >> 1);
+    fn next(&mut self) -> u8 {
+        let b = self.input;
+        self.input = b >> 1;
         !b & 0b01
     }
 }

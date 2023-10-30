@@ -117,7 +117,7 @@ impl Apu {
         self.resampler.clear();
     }
 
-    pub fn read(&self, addr: u16) -> u8 {
+    pub fn read(&mut self, addr: u16) -> u8 {
         match addr {
             0x4015 => {
                 let mut data = 0;

@@ -1,5 +1,4 @@
 use bit_field::BitField;
-use std::cell::Cell;
 
 const FRAME_FREQUENCY: f32 = 240.0;
 const FRAME_PERIOD: f32 = crate::CPU_FREQUENCY / FRAME_FREQUENCY;
@@ -29,7 +28,7 @@ pub struct FrameCounter {
     step: usize,
     mode: Mode,
     irq_on: bool,
-    irq_level: Cell<bool>,
+    irq_level: bool,
 }
 
 impl FrameCounter {
@@ -39,7 +38,7 @@ impl FrameCounter {
             step: 0,
             mode: Mode::Step4,
             irq_on: false,
-            irq_level: Cell::default(),
+            irq_level: false,
         }
     }
 
@@ -54,7 +53,7 @@ impl FrameCounter {
                     step.set(Step::LENGTH, self.step == 1 || self.step == 3);
                     step.set(Step::ENVELOPE, true);
                     if self.irq_on && self.step == 3 {
-                        self.irq_level.set(true);
+                        self.irq_level = true;
                     }
                 }
                 Mode::Step5 => {
@@ -82,11 +81,11 @@ impl FrameCounter {
 
         self.irq_on = !data.get_bit(6);
         if !self.irq_on {
-            self.irq_level.take();
+            self.irq_level = false;
         }
     }
 
-    pub fn irq(&self) -> bool {
-        self.irq_level.replace(false)
+    pub fn irq(&mut self) -> bool {
+        std::mem::take(&mut self.irq_level)
     }
 }

@@ -98,7 +98,7 @@ impl Bus {
         }
     }
 
-    pub fn inspect(&self, addr: u16) -> u8 {
+    pub fn inspect(&mut self, addr: u16) -> u8 {
         match addr {
             0x0000..=0x1fff => self.ram[addr as usize & 0x07ff],
             0x2000..=0x3fff => self.ppu.read(&self.cart, addr),

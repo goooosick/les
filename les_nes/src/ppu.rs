@@ -1,7 +1,7 @@
 use self::regs::*;
 use crate::cart::Cartridge;
 use bit_field::BitField;
-use std::{cell::Cell, ops::IndexMut};
+use std::ops::IndexMut;
 
 pub use self::palettes::PALETTES;
 
@@ -54,12 +54,12 @@ pub struct Ppu {
     mask: PpuMask,
     status: PpuStatus,
     oam_addr: usize,
-    data_buf: Cell<u8>,
+    data_buf: u8,
 
     v: VramAddr,
     t: VramAddr,
     x: usize,
-    w: Cell<WriteLatch>,
+    w: WriteLatch,
     frames: usize,
     line: usize,
     dot: usize,
@@ -78,12 +78,12 @@ impl Default for Ppu {
             mask: PpuMask::default(),
             status: PpuStatus::default(),
             oam_addr: 0,
-            data_buf: Cell::new(0),
+            data_buf: 0,
 
             v: VramAddr::default(),
             t: VramAddr::default(),
             x: 0,
-            w: Cell::new(WriteLatch::Step0),
+            w: WriteLatch::Step0,
             frames: 0,
             line: 0,
             dot: 0,
@@ -361,7 +361,7 @@ impl Ppu {
         self.v = VramAddr::default();
         self.t = VramAddr::default();
         self.x = 0;
-        self.w = Cell::new(WriteLatch::Step0);
+        self.w = WriteLatch::Step0;
         self.nametables.fill(0);
         self.palettes.fill(0);
     }
@@ -380,7 +380,7 @@ impl Ppu {
 }
 
 impl Ppu {
-    pub fn read(&self, cart: &Cartridge, addr: u16) -> u8 {
+    pub fn read(&mut self, cart: &Cartridge, addr: u16) -> u8 {
         let addr = (addr - 0x2000) & 0x07;
         match addr {
             0x00 => 0x00,
@@ -388,7 +388,7 @@ impl Ppu {
             0x02 => {
                 let b = self.status.get();
                 self.status.set_vblank(false);
-                self.w.set(WriteLatch::Step0);
+                self.w = WriteLatch::Step0;
                 b
             }
             0x03 => 0x00,
@@ -397,15 +397,15 @@ impl Ppu {
             0x06 => 0x00,
             0x07 => {
                 let addr = self.v.addr();
-                let data = self.data_buf.get();
+                let data = self.data_buf;
 
-                self.data_buf.set(self.read_vram(cart, addr));
+                self.data_buf = self.read_vram(cart, addr);
                 self.v.inc(self.ctrl.addr_inc());
 
                 if addr < 0x3f00 {
                     data
                 } else {
-                    self.data_buf.get()
+                    self.data_buf
                 }
             }
 
@@ -428,24 +428,24 @@ impl Ppu {
                 self.oam_addr = (self.oam_addr + 1) & 0xff;
             }
             0x05 => {
-                if self.w.get() == WriteLatch::Step0 {
+                if self.w == WriteLatch::Step0 {
                     self.t.set_coarse_x((data >> 3) as u16);
                     self.x = (data & 0b0111) as usize;
-                    self.w.set(WriteLatch::Step1);
+                    self.w = WriteLatch::Step1;
                 } else {
                     self.t.set_coarse_y((data >> 3) as u16);
                     self.t.set_y((data & 0b0111) as u16);
-                    self.w.set(WriteLatch::Step0);
+                    self.w = WriteLatch::Step0;
                 }
             }
             0x06 => {
-                if self.w.get() == WriteLatch::Step0 {
+                if self.w == WriteLatch::Step0 {
                     self.t.set_bits(0x08..0x0f, (data & 0b0011_1111) as u16);
-                    self.w.set(WriteLatch::Step1);
+                    self.w = WriteLatch::Step1;
                 } else {
                     self.t.set_bits(0x00..0x08, data as u16);
                     self.v = self.t.clone();
-                    self.w.set(WriteLatch::Step0);
+                    self.w = WriteLatch::Step0;
                 }
             }
             0x07 => {

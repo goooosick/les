@@ -1,5 +1,4 @@
 use bit_field::BitField;
-use std::cell::Cell;
 
 /// PPU control register
 #[derive(Debug, Default)]
@@ -90,23 +89,23 @@ impl PpuMask {
 
 /// PPU status register
 #[derive(Debug, Default)]
-pub struct PpuStatus(Cell<u8>);
+pub struct PpuStatus(u8);
 
 impl PpuStatus {
-    pub fn set_sp_overflow(&self, b: bool) {
-        self.0.set(*self.0.get().set_bit(5, b));
+    pub fn set_sp_overflow(&mut self, b: bool) {
+        self.0.set_bit(5, b);
     }
 
-    pub fn set_sp0_hit(&self, b: bool) {
-        self.0.set(*self.0.get().set_bit(6, b));
+    pub fn set_sp0_hit(&mut self, b: bool) {
+        self.0.set_bit(6, b);
     }
 
-    pub fn set_vblank(&self, b: bool) {
-        self.0.set(*self.0.get().set_bit(7, b));
+    pub fn set_vblank(&mut self, b: bool) {
+        self.0.set_bit(7, b);
     }
 
     pub fn get(&self) -> u8 {
-        self.0.get()
+        self.0
     }
 }
 
@@ -118,28 +117,27 @@ const VY_MASK: u16 = 0b0111_1011_1110_0000;
 
 /// PPU vram address
 #[derive(Debug, Default, Clone)]
-pub struct VramAddr(Cell<u16>);
+pub struct VramAddr(u16);
 
 impl VramAddr {
     pub fn addr(&self) -> u16 {
-        self.0.get().get_bits(0x00..0x0e)
+        self.0.get_bits(0x00..0x0e)
     }
 
     pub fn tile_addr(&self) -> u16 {
-        let v = self.0.get();
-        0x2000 | (v & 0x0fff)
+        0x2000 | (self.0 & 0x0fff)
     }
 
     pub fn attr_addr(&self) -> u16 {
-        let v = self.0.get();
+        let v = self.0;
         0x23C0 | (v & 0x0c00) | ((v >> 4) & 0x38) | ((v >> 2) & 0x07)
     }
 
-    pub fn inc(&self, offset: u16) {
-        self.0.set(self.0.get() + offset);
+    pub fn inc(&mut self, offset: u16) {
+        self.0 += offset;
     }
 
-    pub fn inc_coarse_x(&self) {
+    pub fn inc_coarse_x(&mut self) {
         let cx = self.coarse_x();
         if cx == 31 {
             self.set_coarse_x(0);
@@ -149,7 +147,7 @@ impl VramAddr {
         }
     }
 
-    pub fn inc_y(&self) {
+    pub fn inc_y(&mut self) {
         let y = self.y();
         if y < 7 {
             self.set_y(y + 1);
@@ -168,55 +166,55 @@ impl VramAddr {
     }
 
     pub fn coarse_x(&self) -> u16 {
-        self.0.get().get_bits(0x00..0x05)
+        self.0.get_bits(0x00..0x05)
     }
 
-    pub fn set_coarse_x(&self, b: u16) {
-        self.0.set(*self.0.get().set_bits(0x00..0x05, b));
+    pub fn set_coarse_x(&mut self, b: u16) {
+        self.0.set_bits(0x00..0x05, b);
     }
 
     pub fn coarse_y(&self) -> u16 {
-        self.0.get().get_bits(0x05..0x0a)
+        self.0.get_bits(0x05..0x0a)
     }
 
-    pub fn set_coarse_y(&self, b: u16) {
-        self.0.set(*self.0.get().set_bits(0x05..0x0a, b));
+    pub fn set_coarse_y(&mut self, b: u16) {
+        self.0.set_bits(0x05..0x0a, b);
     }
 
     pub fn nm(&self) -> u16 {
-        self.0.get().get_bits(0x0a..0x0c)
+        self.0.get_bits(0x0a..0x0c)
     }
 
-    pub fn set_nm(&self, b: u16) {
-        self.0.set(*self.0.get().set_bits(0x0a..0x0c, b));
+    pub fn set_nm(&mut self, b: u16) {
+        self.0.set_bits(0x0a..0x0c, b);
     }
 
-    pub fn switch_nm(&self, b: u16) {
+    pub fn switch_nm(&mut self, b: u16) {
         self.set_nm(self.nm() ^ b);
     }
 
     pub fn y(&self) -> u16 {
-        self.0.get().get_bits(0x0c..0x0f)
+        self.0.get_bits(0x0c..0x0f)
     }
 
-    pub fn set_y(&self, b: u16) {
-        self.0.set(*self.0.get().set_bits(0x0c..0x0f, b));
+    pub fn set_y(&mut self, b: u16) {
+        self.0.set_bits(0x0c..0x0f, b);
     }
 
-    pub fn set_bits<T: std::ops::RangeBounds<usize>>(&self, range: T, b: u16) {
-        self.0.set(*self.0.get().set_bits(range, b));
+    pub fn set_bits<T: std::ops::RangeBounds<usize>>(&mut self, range: T, b: u16) {
+        self.0.set_bits(range, b);
     }
 
-    pub fn copy_vx(&self, other: &VramAddr) {
-        let v0 = self.0.get();
-        let v1 = other.0.get();
-        self.0.set((v0 & !VX_MASK) | (v1 & VX_MASK));
+    pub fn copy_vx(&mut self, other: &VramAddr) {
+        let v0 = self.0;
+        let v1 = other.0;
+        self.0 = (v0 & !VX_MASK) | (v1 & VX_MASK);
     }
 
-    pub fn copy_vy(&self, other: &VramAddr) {
-        let v0 = self.0.get();
-        let v1 = other.0.get();
-        self.0.set((v0 & !VY_MASK) | (v1 & VY_MASK));
+    pub fn copy_vy(&mut self, other: &VramAddr) {
+        let v0 = self.0;
+        let v1 = other.0;
+        self.0 = (v0 & !VY_MASK) | (v1 & VY_MASK);
     }
 }
 

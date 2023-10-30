@@ -78,7 +78,7 @@ impl Cpu {
         self.pc = addr;
     }
 
-    pub fn dump(&self, bus: &Bus) {
+    pub fn dump(&self, bus: &mut Bus) {
         use op_code::OP_NAMES;
 
         print!("{:04X}  ", self.pc);
