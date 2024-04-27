@@ -1,12 +1,11 @@
 use super::{ControlEvent, ControlSender, EmuContext, SharedEmuContext};
 use bevy::{
-    diagnostic::{Diagnostics, FrameTimeDiagnosticsPlugin},
+    diagnostic::{DiagnosticsStore, FrameTimeDiagnosticsPlugin},
     prelude::*,
-    render::texture::ImageSampler,
-    tasks::IoTaskPool,
+    render::{render_asset::RenderAssetUsages, texture::ImageSampler},
 };
 use bevy_egui::{
-    egui::{self, TextureId},
+    egui::{self, load::SizedTexture, TextureId},
     EguiContexts,
 };
 use leafwing_input_manager::prelude::*;
@@ -19,8 +18,8 @@ pub struct UiPlugin {
 
 impl Plugin for UiPlugin {
     fn build(&self, app: &mut App) {
-        app.add_plugin(bevy_egui::EguiPlugin)
-            .add_plugin(InputManagerPlugin::<InputAction>::default())
+        app.add_plugins(bevy_egui::EguiPlugin)
+            .add_plugins(InputManagerPlugin::<InputAction>::default())
             .insert_resource(UiData {
                 scale: 2.0,
                 apu_ctrl: [true; 5],
@@ -29,12 +28,12 @@ impl Plugin for UiPlugin {
             .insert_resource(SharedEmuContextRes(self.emu.clone()))
             .insert_resource(ControlSenderRes(self.control_sender.clone()))
             .add_event::<PickRom>()
-            .add_startup_system(alloc_textures)
-            .add_startup_system(spawn_players)
-            .add_system(ui)
-            .add_system(pick_rom)
-            .add_system(sync_emu_status)
-            .add_system(handle_inputs);
+            .add_systems(Startup, alloc_textures)
+            .add_systems(Startup, spawn_players)
+            .add_systems(Update, ui)
+            .add_systems(Update, pick_rom)
+            .add_systems(Update, sync_emu_status)
+            .add_systems(Update, handle_inputs);
     }
 }
 
@@ -73,9 +72,10 @@ struct ControlSenderRes(ControlSender);
 #[derive(Resource)]
 struct SharedEmuContextRes(SharedEmuContext);
 
+#[derive(Event)]
 struct PickRom;
 
-#[derive(Actionlike, PartialEq, Eq, Clone, Copy, Hash, Debug)]
+#[derive(Actionlike, PartialEq, Eq, Hash, Clone, Copy, Debug, Reflect)]
 enum InputAction {
     A,
     B,
@@ -97,7 +97,7 @@ fn ui(
     mut egui_context: EguiContexts,
     infos: Res<PpuTextures>,
     mut ui_data: ResMut<UiData>,
-    diagnostics: Res<Diagnostics>,
+    diagnostics: Res<DiagnosticsStore>,
     control_sender: Res<ControlSenderRes>,
     mut pick_rom: EventWriter<PickRom>,
 ) {
@@ -139,7 +139,7 @@ fn ui(
                 egui::Window::new(tex.name)
                     .resizable(false)
                     .show(ctx, |ui| {
-                        ui.image(tex.id, tex.size);
+                        ui.image(SizedTexture::new(tex.id, tex.size));
 
                         if index == 0 {
                             ui.add(Slider::new(pat_index, 0..=7).text("index"));
@@ -201,7 +201,7 @@ fn ui(
         egui::Window::new(format!(
             "les-{:3.02}",
             diagnostics
-                .get(FrameTimeDiagnosticsPlugin::FPS)
+                .get(&FrameTimeDiagnosticsPlugin::FPS)
                 .unwrap()
                 .average()
                 .unwrap_or_default()
@@ -209,7 +209,10 @@ fn ui(
         .id(egui::Id::new("window"))
         .collapsible(false)
         .show(ctx, |ui| {
-            ui.image(infos[0].id, infos[0].size * ui_data.scale);
+            ui.image(SizedTexture::new(
+                infos[0].id,
+                infos[0].size * ui_data.scale,
+            ));
             ui.add(Slider::new(&mut ui_data.scale, 1.0..=3.0));
         });
     });
@@ -242,8 +245,9 @@ fn alloc_textures(
             TextureDimension::D2,
             vec![255u8; size.0 * size.1 * 4],
             TextureFormat::Rgba8UnormSrgb,
+            RenderAssetUsages::all(),
         );
-        image.sampler_descriptor = ImageSampler::nearest();
+        image.sampler = ImageSampler::nearest();
 
         let handle = assets.add(image);
         let id = egui_context.add_image(handle.clone_weak());
@@ -306,34 +310,29 @@ fn sync_emu_status(
 
 fn spawn_players(mut commands: Commands) {
     commands
-        .spawn(InputManagerBundle {
-            input_map: {
-                InputMap::new([
-                    (KeyCode::Z, InputAction::A),
-                    (KeyCode::X, InputAction::B),
-                    (KeyCode::C, InputAction::Select),
-                    (KeyCode::V, InputAction::Start),
-                    (KeyCode::Up, InputAction::Up),
-                    (KeyCode::Down, InputAction::Down),
-                    (KeyCode::Left, InputAction::Left),
-                    (KeyCode::Right, InputAction::Right),
-                ])
-            },
-            ..Default::default()
-        })
+        .spawn(InputManagerBundle::with_map(InputMap::new([
+            (InputAction::A, KeyCode::KeyZ),
+            (InputAction::B, KeyCode::KeyX),
+            (InputAction::Select, KeyCode::KeyC),
+            (InputAction::Start, KeyCode::KeyV),
+            (InputAction::Up, KeyCode::ArrowUp),
+            (InputAction::Down, KeyCode::ArrowDown),
+            (InputAction::Left, KeyCode::ArrowLeft),
+            (InputAction::Right, KeyCode::ArrowRight),
+        ])))
         .insert(Player1);
     commands
         .spawn(InputManagerBundle {
             input_map: {
                 InputMap::new([
-                    (GamepadButtonType::South, InputAction::A),
-                    (GamepadButtonType::East, InputAction::B),
-                    (GamepadButtonType::Select, InputAction::Select),
-                    (GamepadButtonType::Start, InputAction::Start),
-                    (GamepadButtonType::DPadUp, InputAction::Up),
-                    (GamepadButtonType::DPadDown, InputAction::Down),
-                    (GamepadButtonType::DPadLeft, InputAction::Left),
-                    (GamepadButtonType::DPadRight, InputAction::Right),
+                    (InputAction::A, GamepadButtonType::South),
+                    (InputAction::B, GamepadButtonType::East),
+                    (InputAction::Select, GamepadButtonType::Select),
+                    (InputAction::Start, GamepadButtonType::Start),
+                    (InputAction::Up, GamepadButtonType::DPadUp),
+                    (InputAction::Down, GamepadButtonType::DPadDown),
+                    (InputAction::Left, GamepadButtonType::DPadLeft),
+                    (InputAction::Right, GamepadButtonType::DPadRight),
                 ])
             },
             ..Default::default()
@@ -344,17 +343,17 @@ fn spawn_players(mut commands: Commands) {
 fn handle_inputs(
     query_p1: Query<&ActionState<InputAction>, With<Player1>>,
     query_p2: Query<&ActionState<InputAction>, With<Player2>>,
-    input: Res<Input<KeyCode>>,
+    input: Res<ButtonInput<KeyCode>>,
     control_sender: Res<ControlSenderRes>,
     ui_data: Res<UiData>,
 ) {
     let control_sender = &control_sender.0;
 
-    if input.just_pressed(KeyCode::R) {
+    if input.just_pressed(KeyCode::KeyR) {
         let _ = control_sender.send(ControlEvent::Reset);
-    } else if input.pressed(KeyCode::S) {
+    } else if input.pressed(KeyCode::KeyS) {
         let _ = control_sender.send(ControlEvent::Step);
-    } else if input.just_pressed(KeyCode::LShift) {
+    } else if input.just_pressed(KeyCode::ShiftLeft) {
         let _ = control_sender.send(ControlEvent::Pause);
     }
 
@@ -370,22 +369,21 @@ fn handle_inputs(
 
 fn action_to_states(s: &ActionState<InputAction>) -> InputStates {
     les_nes::InputStates {
-        a: s.pressed(InputAction::A),
-        b: s.pressed(InputAction::B),
-        select: s.pressed(InputAction::Select),
-        start: s.pressed(InputAction::Start),
-        up: s.pressed(InputAction::Up),
-        down: s.pressed(InputAction::Down),
-        left: s.pressed(InputAction::Left),
-        right: s.pressed(InputAction::Right),
+        a: s.pressed(&InputAction::A),
+        b: s.pressed(&InputAction::B),
+        select: s.pressed(&InputAction::Select),
+        start: s.pressed(&InputAction::Start),
+        up: s.pressed(&InputAction::Up),
+        down: s.pressed(&InputAction::Down),
+        left: s.pressed(&InputAction::Left),
+        right: s.pressed(&InputAction::Right),
     }
 }
 
 fn pick_rom(sender: Res<ControlSenderRes>, mut events: EventReader<PickRom>) {
-    if events.iter().next().is_some() {
-        let task_pool = IoTaskPool::get();
+    if events.read().next().is_some() {
         let sender = sender.0.clone();
-        task_pool
+        bevy::tasks::IoTaskPool::get()
             .spawn(async move {
                 if let Some(handle) = rfd::AsyncFileDialog::new().pick_file().await {
                     let _ = sender.send(ControlEvent::LoadCart(handle.read().await));

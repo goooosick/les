@@ -56,13 +56,12 @@ fn main() {
             present_mode: bevy::window::PresentMode::AutoVsync,
             #[cfg(target_arch = "wasm32")]
             canvas: Some("#viewport".to_string()),
-            fit_canvas_to_parent: true,
             ..Default::default()
         }),
         ..Default::default()
     }))
-    .add_plugin(bevy::diagnostic::FrameTimeDiagnosticsPlugin)
-    .add_plugin(ui::UiPlugin {
+    .add_plugins(bevy::diagnostic::FrameTimeDiagnosticsPlugin)
+    .add_plugins(ui::UiPlugin {
         emu,
         control_sender: sender,
     })
