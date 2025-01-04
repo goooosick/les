@@ -60,7 +60,7 @@ fn main() {
         }),
         ..Default::default()
     }))
-    .add_plugins(bevy::diagnostic::FrameTimeDiagnosticsPlugin)
+    .add_plugins(bevy::diagnostic::FrameTimeDiagnosticsPlugin::default())
     .add_plugins(ui::UiPlugin {
         emu,
         control_sender: sender,

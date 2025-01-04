@@ -1,12 +1,12 @@
 use super::{ControlEvent, ControlSender, EmuContext, SharedEmuContext};
 use bevy::{
     diagnostic::{DiagnosticsStore, FrameTimeDiagnosticsPlugin},
+    image::ImageSampler,
     prelude::*,
-    render::{render_asset::RenderAssetUsages, texture::ImageSampler},
 };
 use bevy_egui::{
     egui::{self, load::SizedTexture, TextureId},
-    EguiContexts,
+    EguiContexts, EguiPrimaryContextPass,
 };
 use leafwing_input_manager::prelude::*;
 use les_nes::{cpu::CpuStatus, InputStates};
@@ -18,7 +18,7 @@ pub struct UiPlugin {
 
 impl Plugin for UiPlugin {
     fn build(&self, app: &mut App) {
-        app.add_plugins(bevy_egui::EguiPlugin)
+        app.add_plugins(bevy_egui::EguiPlugin::default())
             .add_plugins(InputManagerPlugin::<InputAction>::default())
             .insert_resource(UiData {
                 scale: 2.0,
@@ -27,10 +27,11 @@ impl Plugin for UiPlugin {
             })
             .insert_resource(SharedEmuContextRes(self.emu.clone()))
             .insert_resource(ControlSenderRes(self.control_sender.clone()))
-            .add_event::<PickRom>()
+            .add_message::<PickRom>()
+            .add_systems(Startup, setup_camera_system)
             .add_systems(Startup, alloc_textures)
             .add_systems(Startup, spawn_players)
-            .add_systems(Update, ui)
+            .add_systems(EguiPrimaryContextPass, ui)
             .add_systems(Update, pick_rom)
             .add_systems(Update, sync_emu_status)
             .add_systems(Update, handle_inputs);
@@ -72,7 +73,7 @@ struct ControlSenderRes(ControlSender);
 #[derive(Resource)]
 struct SharedEmuContextRes(SharedEmuContext);
 
-#[derive(Event)]
+#[derive(Message)]
 struct PickRom;
 
 #[derive(Actionlike, PartialEq, Eq, Hash, Clone, Copy, Debug, Reflect)]
@@ -93,25 +94,27 @@ struct Player1;
 #[derive(Component)]
 struct Player2;
 
+fn setup_camera_system(mut commands: Commands) {
+    commands.spawn(Camera2d);
+}
+
 fn ui(
     mut egui_context: EguiContexts,
     infos: Res<PpuTextures>,
     mut ui_data: ResMut<UiData>,
     diagnostics: Res<DiagnosticsStore>,
     control_sender: Res<ControlSenderRes>,
-    mut pick_rom: EventWriter<PickRom>,
-) {
-    use egui::{menu, Slider};
-
-    let ctx = egui_context.ctx_mut();
+    mut pick_rom: MessageWriter<PickRom>,
+) -> Result {
+    let ctx = egui_context.ctx_mut()?;
     let infos = &infos.0;
     let control_sender = &control_sender.0;
 
     egui::TopBottomPanel::top("").show(ctx, |ui| {
-        menu::bar(ui, |ui| {
+        egui::MenuBar::new().ui(ui, |ui| {
             ui.menu_button("File", |ui| {
                 if ui.button("open").clicked() {
-                    pick_rom.send(PickRom);
+                    pick_rom.write(PickRom);
                 }
             });
             ui.menu_button("Debug", |ui| {
@@ -142,9 +145,9 @@ fn ui(
                         ui.image(SizedTexture::new(tex.id, tex.size));
 
                         if index == 0 {
-                            ui.add(Slider::new(pat_index, 0..=7).text("index"));
+                            ui.add(egui::Slider::new(pat_index, 0..=7).text("index"));
                         } else if index == 1 {
-                            ui.add(Slider::new(nm_index, 0..=3).text("index"));
+                            ui.add(egui::Slider::new(nm_index, 0..=3).text("index"));
                         }
                     });
             }
@@ -213,9 +216,11 @@ fn ui(
                 infos[0].id,
                 infos[0].size * ui_data.scale,
             ));
-            ui.add(Slider::new(&mut ui_data.scale, 1.0..=3.0));
+            ui.add(egui::Slider::new(&mut ui_data.scale, 1.0..=3.0));
         });
     });
+
+    Ok(())
 }
 
 fn alloc_textures(
@@ -245,12 +250,12 @@ fn alloc_textures(
             TextureDimension::D2,
             vec![255u8; size.0 * size.1 * 4],
             TextureFormat::Rgba8UnormSrgb,
-            RenderAssetUsages::all(),
+            bevy::asset::RenderAssetUsages::all(),
         );
         image.sampler = ImageSampler::nearest();
 
         let handle = assets.add(image);
-        let id = egui_context.add_image(handle.clone_weak());
+        let id = egui_context.add_image(bevy_egui::EguiTextureHandle::Strong(handle.clone()));
 
         images.push(PpuTexture {
             id,
@@ -272,32 +277,36 @@ fn sync_emu_status(
     let mut emu = emu.0.lock().unwrap();
     let EmuContext { cpu, bus, .. } = &mut *emu;
 
-    fn as_chunks_mut(slice: &mut [u8]) -> &mut [[u8; 4]] {
-        assert_eq!(slice.len() % 4, 0);
-        unsafe { std::slice::from_raw_parts_mut(slice.as_mut_ptr().cast(), slice.len() / 4) }
+    fn image_as_mut(image: Option<&mut Image>) -> &mut [[u8; 4]] {
+        image
+            .unwrap()
+            .data
+            .as_mut()
+            .unwrap()
+            .as_mut_slice()
+            .as_chunks_mut::<4>()
+            .0
     }
 
     let ppu = bus.ppu();
     let infos = &infos.0;
 
-    if let Some(tex) = textures.get_mut(&infos[0].handle) {
-        ppu.render_display(as_chunks_mut(tex.data.as_mut()));
-    }
+    ppu.render_display(image_as_mut(textures.get_mut(&infos[0].handle)));
     if ui_data.debug {
         let cart = bus.cart();
 
-        if let Some(tex) = textures.get_mut(&infos[1].handle) {
-            ppu.render_pattern_table(cart, as_chunks_mut(tex.data.as_mut()), ui_data.pat_index);
-        }
-        if let Some(tex) = textures.get_mut(&infos[2].handle) {
-            ppu.render_name_table(cart, as_chunks_mut(tex.data.as_mut()), ui_data.nm_index);
-        }
-        if let Some(tex) = textures.get_mut(&infos[3].handle) {
-            ppu.render_palettes(as_chunks_mut(tex.data.as_mut()));
-        }
-        if let Some(tex) = textures.get_mut(&infos[4].handle) {
-            ppu.render_sprites(cart, as_chunks_mut(tex.data.as_mut()));
-        }
+        ppu.render_pattern_table(
+            cart,
+            image_as_mut(textures.get_mut(&infos[1].handle)),
+            ui_data.pat_index,
+        );
+        ppu.render_name_table(
+            cart,
+            image_as_mut(textures.get_mut(&infos[2].handle)),
+            ui_data.nm_index,
+        );
+        ppu.render_palettes(image_as_mut(textures.get_mut(&infos[3].handle)));
+        ppu.render_sprites(cart, image_as_mut(textures.get_mut(&infos[4].handle)));
     }
 
     ui_data.nes_status = NesStatus {
@@ -310,7 +319,7 @@ fn sync_emu_status(
 
 fn spawn_players(mut commands: Commands) {
     commands
-        .spawn(InputManagerBundle::with_map(InputMap::new([
+        .spawn(InputMap::new([
             (InputAction::A, KeyCode::KeyZ),
             (InputAction::B, KeyCode::KeyX),
             (InputAction::Select, KeyCode::KeyC),
@@ -319,24 +328,19 @@ fn spawn_players(mut commands: Commands) {
             (InputAction::Down, KeyCode::ArrowDown),
             (InputAction::Left, KeyCode::ArrowLeft),
             (InputAction::Right, KeyCode::ArrowRight),
-        ])))
+        ]))
         .insert(Player1);
     commands
-        .spawn(InputManagerBundle {
-            input_map: {
-                InputMap::new([
-                    (InputAction::A, GamepadButtonType::South),
-                    (InputAction::B, GamepadButtonType::East),
-                    (InputAction::Select, GamepadButtonType::Select),
-                    (InputAction::Start, GamepadButtonType::Start),
-                    (InputAction::Up, GamepadButtonType::DPadUp),
-                    (InputAction::Down, GamepadButtonType::DPadDown),
-                    (InputAction::Left, GamepadButtonType::DPadLeft),
-                    (InputAction::Right, GamepadButtonType::DPadRight),
-                ])
-            },
-            ..Default::default()
-        })
+        .spawn(InputMap::new([
+            (InputAction::A, GamepadButton::South),
+            (InputAction::B, GamepadButton::East),
+            (InputAction::Select, GamepadButton::Select),
+            (InputAction::Start, GamepadButton::Start),
+            (InputAction::Up, GamepadButton::DPadUp),
+            (InputAction::Down, GamepadButton::DPadDown),
+            (InputAction::Left, GamepadButton::DPadLeft),
+            (InputAction::Right, GamepadButton::DPadRight),
+        ]))
         .insert(Player2);
 }
 
@@ -346,7 +350,7 @@ fn handle_inputs(
     input: Res<ButtonInput<KeyCode>>,
     control_sender: Res<ControlSenderRes>,
     ui_data: Res<UiData>,
-) {
+) -> Result {
     let control_sender = &control_sender.0;
 
     if input.just_pressed(KeyCode::KeyR) {
@@ -357,14 +361,16 @@ fn handle_inputs(
         let _ = control_sender.send(ControlEvent::Pause);
     }
 
-    let states_p1 = action_to_states(query_p1.single());
-    let states_p2 = action_to_states(query_p2.single());
+    let states_p1 = action_to_states(query_p1.single()?);
+    let states_p2 = action_to_states(query_p2.single()?);
 
     let _ = control_sender.send(if !ui_data.swap_input {
         ControlEvent::Inputs(states_p1, states_p2)
     } else {
         ControlEvent::Inputs(states_p2, states_p1)
     });
+
+    Ok(())
 }
 
 fn action_to_states(s: &ActionState<InputAction>) -> InputStates {
@@ -380,8 +386,8 @@ fn action_to_states(s: &ActionState<InputAction>) -> InputStates {
     }
 }
 
-fn pick_rom(sender: Res<ControlSenderRes>, mut events: EventReader<PickRom>) {
-    if events.read().next().is_some() {
+fn pick_rom(sender: Res<ControlSenderRes>, mut messages: MessageReader<PickRom>) {
+    if messages.read().next().is_some() {
         let sender = sender.0.clone();
         bevy::tasks::IoTaskPool::get()
             .spawn(async move {
