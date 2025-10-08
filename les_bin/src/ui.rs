@@ -33,8 +33,9 @@ impl Plugin for UiPlugin {
             .add_systems(Startup, spawn_players)
             .add_systems(EguiPrimaryContextPass, ui)
             .add_systems(Update, pick_rom)
-            .add_systems(Update, sync_emu_status)
-            .add_systems(Update, handle_inputs);
+            .add_systems(Update, handle_inputs)
+            .add_systems(FixedUpdate, sync_emu_status)
+            .insert_resource(Time::<Fixed>::from_seconds(59.0f64.recip()));
     }
 }
 

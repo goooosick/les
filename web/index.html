@@ -90,11 +90,13 @@
 
     <script src="./pkg/les_bevy.js"></script>
 
-    <script>
+    <script type=module>
+        import "./resume_audio.js";
+
         (async () => {
             try {
                 console.debug("loading wasm…");
-                await wasm_bindgen('./pkg/les_bevy_bg.wasm');
+                await wasm_bindgen();
             } catch (error) {
                 console.error("load error: ", error);
             }

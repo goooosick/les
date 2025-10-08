@@ -1,8 +1,8 @@
 use bevy::prelude::*;
-use cpal::traits::{DeviceTrait, HostTrait, StreamTrait};
 use les_nes::{Bus, Cartridge, Cpu, InputStates};
 use std::sync::{Arc, Mutex};
 
+mod audio;
 mod ui;
 
 type ControlReceiver = crossbeam_channel::Receiver<ControlEvent>;
@@ -46,9 +46,6 @@ fn main() {
         }))
     };
 
-    let stream = init_audio(emu.clone());
-    stream.play().unwrap();
-
     let mut app = App::new();
     app.add_plugins(DefaultPlugins.set(WindowPlugin {
         primary_window: Some(Window {
@@ -62,111 +59,9 @@ fn main() {
     }))
     .add_plugins(bevy::diagnostic::FrameTimeDiagnosticsPlugin::default())
     .add_plugins(ui::UiPlugin {
-        emu,
+        emu: emu.clone(),
         control_sender: sender,
     })
+    .add_plugins(audio::AudioRunnerPlugin { emu })
     .run();
-}
-
-fn init_audio(emu: SharedEmuContext) -> cpal::Stream {
-    let host = cpal::default_host();
-    let device = host
-        .default_output_device()
-        .expect("no default audio device");
-    let config = device
-        .default_output_config()
-        .expect("no default audio output config");
-
-    match config.sample_format() {
-        cpal::SampleFormat::I16 => run_audio::<i16>(emu, &device, &config.into()),
-        cpal::SampleFormat::U16 => run_audio::<u16>(emu, &device, &config.into()),
-        cpal::SampleFormat::F32 => run_audio::<f32>(emu, &device, &config.into()),
-        f => panic!("sample format {} not covered", f),
-    }
-}
-
-fn run_audio<T>(
-    emu: SharedEmuContext,
-    device: &cpal::Device,
-    config: &cpal::StreamConfig,
-) -> cpal::Stream
-where
-    T: cpal::SizedSample + cpal::FromSample<i16>,
-{
-    let sample_rate = config.sample_rate.0 as f32;
-    let channels = config.channels as usize;
-    let mut sample_buf = vec![0i16; 4096];
-
-    emu.lock()
-        .unwrap()
-        .bus
-        .resampler()
-        .set_rates(sample_rate as _);
-
-    device
-        .build_output_stream(
-            config,
-            move |data: &mut [T], _: &cpal::OutputCallbackInfo| {
-                let mut emu = emu.lock().unwrap();
-                let EmuContext {
-                    bus,
-                    cpu,
-                    pause,
-                    step,
-                    cnotrol_events,
-                } = &mut *emu;
-
-                while let Ok(ev) = cnotrol_events.try_recv() {
-                    match ev {
-                        ControlEvent::LoadCart(data) => {
-                            if let Some(cart) = Cartridge::load(&data) {
-                                bus.load_cart(cart);
-                                bus.reset(cpu);
-                            }
-                        }
-                        ControlEvent::AudioCtrl(states) => bus.set_audio_control(&states),
-                        ControlEvent::Inputs(p0, p1) => {
-                            bus.set_input0(p0);
-                            bus.set_input1(p1);
-                        }
-                        ControlEvent::Reset => bus.reset(cpu),
-                        ControlEvent::Pause => *pause = !*pause,
-                        ControlEvent::Step => {
-                            *pause = true;
-                            *step = true;
-                        }
-                    }
-                }
-
-                if *pause {
-                    if *step {
-                        bus.exec(cpu);
-                        *step = false;
-                    }
-
-                    bus.resampler().clear();
-                    data.fill(cpal::Sample::from_sample(0));
-                } else {
-                    let sample_len = data.len() / channels;
-
-                    let needed_cycles = bus.resampler().clocks_needed(sample_len);
-                    let cycles = bus.cycles() + needed_cycles;
-                    while bus.cycles() < cycles {
-                        bus.exec(cpu);
-                    }
-
-                    bus.resampler().end_frame();
-                    bus.resampler().read_samples(&mut sample_buf[..sample_len]);
-
-                    data.chunks_exact_mut(channels)
-                        .zip(&sample_buf[..sample_len])
-                        .for_each(|(b, s)| {
-                            b.fill(cpal::Sample::from_sample(*s));
-                        });
-                }
-            },
-            |err| eprintln!("an error occurred on stream: {}", err),
-            None,
-        )
-        .unwrap()
 }

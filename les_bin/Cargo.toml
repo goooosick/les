@@ -10,6 +10,7 @@ bevy = { version = "0.17", default-features = false, features = [
     "bevy_render",
     "bevy_image",
     "bevy_asset",
+    "bevy_audio",
     "bevy_core_pipeline",
     "multi_threaded",
     "webgpu",
@@ -24,11 +25,8 @@ leafwing-input-manager = { version = "0.18", default-features = false, features 
     "keyboard",
     "gamepad",
 ] }
-
-[target.'cfg(not(target_arch = "wasm32"))'.dependencies]
-cpal = "0.16"
+crossbeam-queue = "0.3.12"
 
 [target.'cfg(target_arch = "wasm32")'.dependencies]
-cpal = { version = "0.16", features = ["wasm-bindgen"] }
 console_error_panic_hook = "0.1.7"
 getrandom = { version = "0.3", features = ["wasm_js"] }
